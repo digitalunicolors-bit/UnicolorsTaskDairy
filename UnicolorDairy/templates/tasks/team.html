@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+  <div class="row-between">
+    <h2>Team <small>admins and members · this month's progress</small></h2>
+    <a class="btn primary" href="{% url 'user_add' %}">+ Add person</a>
+  </div>
+  <p class="muted small">Admins can assign, approve and see everyone's reports. Team members see only their own tasks. Add as many admins as you need.</p>
+  {% for u, s in rows %}
+    <div class="team-row {% if not u.is_active %}inactive{% endif %}">
+      <span class="avatar">{{ u.initials }}</span>
+      <div class="grow">
+        <b>{{ u.display_name }}</b>
+        <span class="role {% if u.is_admin %}admin{% endif %}">{% if u.is_admin %}Admin{% else %}Member{% endif %}</span>
+        <span class="muted">@{{ u.username }}{% if u.designation %} · {{ u.designation }}{% endif %}{% if u == user %} · you{% endif %}{% if not u.is_active %} · inactive{% endif %}</span>
+        <div class="muted small">{{ s.done }}/{{ s.assigned }} done{% if s.late %} · <span class="red">{{ s.late }} late</span>{% endif %}</div>
+        <div class="progress"><i style="width:{{ s.pct }}%"></i></div>
+      </div>
+      <a class="btn sm" href="{% url 'user_edit' u.pk %}">Edit / role</a>
+      <a class="btn sm" href="{% url 'user_password' u.pk %}">Reset password</a>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

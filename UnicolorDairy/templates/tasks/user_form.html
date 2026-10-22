@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="narrow">
+  <div class="panel">
+    <h2>{{ title }}</h2>
+    <form method="post" class="stack">
+      {% csrf_token %}
+      {% for e in form.non_field_errors %}<div class="err">{{ e }}</div>{% endfor %}
+      {% for field in form %}
+        {% if field.field.widget.input_type == "checkbox" %}
+          <label class="check">{{ field }} {{ field.label }}</label>
+        {% else %}
+          <label>{{ field.label }}{{ field }}</label>
+        {% endif %}
+        {% if field.help_text %}<div class="muted small">{{ field.help_text }}</div>{% endif %}
+        {% for e in field.errors %}<div class="err">{{ e }}</div>{% endfor %}
+      {% endfor %}
+      <div class="row"><button class="primary" type="submit">Save</button><a class="btn" href="{% url 'team' %}">Cancel</a></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

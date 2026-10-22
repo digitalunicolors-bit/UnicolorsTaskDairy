@@ -1,0 +1,21 @@
+{# Expects: board, stats, admin_view, show_member #}
+<div class="stats">
+  <div class="stat"><small>Tasks</small><b>{{ stats.total }}</b></div>
+  <div class="stat"><small>In progress</small><b>{{ stats.progress }}</b></div>
+  <div class="stat"><small>Needs approval</small><b>{{ stats.review }}</b></div>
+  <div class="stat"><small>Changes requested</small><b>{{ stats.change }}</b></div>
+  <div class="stat"><small>Overdue</small><b class="{% if stats.late %}red{% endif %}">{{ stats.late }}</b></div>
+  <div class="stat"><small>Completed</small><b>{{ stats.pct }}%</b><div class="progress"><i style="width:{{ stats.pct }}%"></i></div></div>
+</div>
+<div class="board">
+  {% for col in board %}
+  <div class="col">
+    <div class="col-h"><span class="dot s-{{ col.status }}"></span>{{ col.label }}<span class="count">{{ col.tasks|length }}</span></div>
+    {% for t in col.tasks %}
+      {% include "tasks/_card.html" with t=t admin_view=admin_view show_member=show_member %}
+    {% empty %}
+      <div class="empty">Nothing here</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>

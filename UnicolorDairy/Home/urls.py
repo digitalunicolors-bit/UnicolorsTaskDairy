@@ -1,0 +1,18 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path("", views.home, name="home"),
+    path("dashboard/", views.dashboard, name="dashboard"),
+    path("tasks/assign/", views.assign_task, name="assign_task"),
+    path("tasks/<int:pk>/<str:action>/", views.task_action, name="task_action"),
+    path("my-tasks/", views.my_tasks, name="my_tasks"),
+    path("files/<int:pk>/", views.attachment, name="attachment"),
+    path("reports/", views.report, name="report"),
+    path("reports/export.csv", views.report_csv, name="report_csv"),
+    path("team/", views.team, name="team"),
+    path("team/add/", views.user_add, name="user_add"),
+    path("team/<int:pk>/edit/", views.user_edit, name="user_edit"),
+    path("team/<int:pk>/password/", views.user_password, name="user_password"),
+]

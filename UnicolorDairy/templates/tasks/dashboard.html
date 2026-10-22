@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+  <h2>Assign a task</h2>
+  <form method="post" action="{% url 'assign_task' %}" class="form-grid" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label class="t">Task{{ form.title }}</label>
+    <label>Priority{{ form.priority }}</label>
+    <label>Due date{{ form.due_date }}</label>
+    <div class="full fl">Assign to (pick one or more)
+      <div class="chips">
+        {% for cb in form.assignees %}
+          <label class="chip">{{ cb.tag }}<span class="avatar xs">{{ cb.choice_label|slice:":1"|upper }}</span>{{ cb.choice_label }}</label>
+        {% empty %}<span class="muted">No people yet — add them in the Team tab.</span>{% endfor %}
+      </div>
+    </div>
+    <label class="full">Details (optional){{ form.details }}</label>
+    <div class="full brief-extras">
+      <label class="fl">Attachments (optional · up to 10 files, max {{ max_upload_mb }} MB each)
+        <input type="file" name="attachments" multiple>
+      </label>
+      <div class="fl" id="voiceBox">Voice note (optional)
+        <div class="row">
+          <button type="button" class="btn" data-rec>🎙 Record voice note</button>
+          <button type="button" class="btn sm danger" data-del hidden>Remove</button>
+          <audio controls hidden></audio>
+        </div>
+        <span class="muted small" data-status></span>
+        {{ form.voice_note }}
+      </div>
+    </div>
+    <div class="full"><button class="primary" type="submit">Assign task</button></div>
+  </form>
+</div>
+
+<form method="get" class="controls">
+  <label class="inline">Date<input type="date" name="date" value="{{ day|date:'Y-m-d' }}" onchange="this.form.submit()"></label>
+  <label class="inline">Show
+    <select name="show" onchange="this.form.submit()">
+      <option value="day" {% if show == 'day' %}selected{% endif %}>This day</option>
+      <option value="open" {% if show == 'open' %}selected{% endif %}>All open tasks</option>
+      <option value="month" {% if show == 'month' %}selected{% endif %}>Whole month</option>
+    </select>
+  </label>
+  <label class="inline">Member
+    <select name="member" onchange="this.form.submit()">
+      <option value="all">Everyone</option>
+      {% for m in members %}<option value="{{ m.id }}" {% if member_id == m.id|stringformat:'s' %}selected{% endif %}>{{ m.display_name }}</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button class="sm">Apply</button></noscript>
+</form>
+
+{% include "tasks/_board.html" with admin_view=True show_member=True %}
+{% endblock %}
+{% block scripts %}{% load static %}<script src="{% static 'js/voice.js' %}"></script>{% endblock %}

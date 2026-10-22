@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Log in · Unicolors Daily Tasks{% endblock %}
+{% block content %}
+<div class="narrow">
+  <div class="panel">
+    <h2>Log in</h2>
+    {% if form.errors %}<div class="banner error">Wrong username/email or password. Please try again.</div>{% endif %}
+    <form method="post" class="stack">
+      {% csrf_token %}
+      <label>Username or email<input name="username" autocomplete="username" required autofocus value="{{ form.username.value|default:'' }}"></label>
+      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="primary" type="submit">Log in</button>
+    </form>
+    <p class="muted small">Don't have a login? Ask your admin to create one for you.</p>
+  </div>
+</div>
+{% endblock %}

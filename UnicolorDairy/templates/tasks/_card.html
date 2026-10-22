@@ -1,0 +1,70 @@
+{# Expects: t (task), admin_view (bool), show_member (bool) #}
+<div class="card">
+  <h3>{{ t.title }}</h3>
+  {% if t.details %}<p>{{ t.details|urlize }}</p>{% endif %}
+  {% with atts=t.attachments.all %}{% if atts %}
+  <div class="atts">
+    {% for a in atts %}
+      {% if a.kind == "voice" %}
+        <div class="att voice"><span class="small">🎙 Voice note</span><audio controls preload="none" src="{% url 'attachment' a.pk %}"></audio></div>
+      {% else %}
+        <a class="att" href="{% url 'attachment' a.pk %}" target="_blank" rel="noopener">📎 {{ a.original_name|truncatechars:34 }} <span class="muted">{{ a.size_label }}</span></a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}{% endwith %}
+  {% if t.status == "change" and t.admin_note %}<div class="note change"><b>Changes requested:</b> {{ t.admin_note|urlize }}</div>{% endif %}
+  {% if t.member_note and t.status == "review" or t.member_note and t.status == "done" %}<div class="note upd"><b>{% if admin_view %}{{ t.assignee.display_name }}'s note{% else %}Your note{% endif %}:</b> {{ t.member_note|urlize }}</div>{% endif %}
+  <div class="meta">
+    <span class="pill p-{{ t.priority }}">{{ t.get_priority_display }}</span>
+    <span class="pill {% if t.is_late %}late{% endif %}">{% if t.is_late %}Overdue · {% else %}Due {% endif %}{{ t.due_date|date:"j M" }}</span>
+    {% if show_member %}<span class="pill who">{{ t.assignee.display_name }}</span>{% endif %}
+  </div>
+  <div class="times">
+    {% if t.submitted_at %}Submitted {{ t.submitted_at|date:"j M, g:i A" }}{% endif %}
+    {% if t.status == "done" and t.done_at %} · Approved {{ t.done_at|date:"j M, g:i A" }}{% if t.approved_by %} by {{ t.approved_by.display_name }}{% endif %}{% endif %}
+    {% if t.change_count %} · {{ t.change_count }} change request{{ t.change_count|pluralize }}{% endif %}
+  </div>
+
+  <div class="actions">
+    {% if t.assignee_id == user.id %}
+      {% if t.status == "todo" %}
+        <form method="post" action="{% url 'task_action' t.pk 'start' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="sm">Start</button></form>
+      {% endif %}
+      {% if t.status == "todo" or t.status == "progress" or t.status == "change" %}
+        <details class="inline">
+          <summary class="btn sm primary">Mark complete</summary>
+          <form method="post" action="{% url 'task_action' t.pk 'submit' %}">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <textarea name="note" rows="2" maxlength="1000" placeholder="Optional: what you did, file link…"></textarea>
+            <button class="sm primary">Submit for approval</button>
+          </form>
+        </details>
+      {% endif %}
+    {% endif %}
+
+    {% if admin_view %}
+      {% if t.status == "review" %}
+        <form method="post" action="{% url 'task_action' t.pk 'approve' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="sm ok">Approve</button></form>
+      {% endif %}
+      {% if t.status == "review" or t.status == "done" %}
+        <details class="inline">
+          <summary class="btn sm warn">{% if t.status == "done" %}Reopen{% else %}Request changes{% endif %}</summary>
+          <form method="post" action="{% url 'task_action' t.pk 'changes' %}">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <textarea name="note" rows="2" maxlength="1000" required placeholder="What needs to change?"></textarea>
+            <button class="sm warn">Send</button>
+          </form>
+        </details>
+      {% endif %}
+      <details class="inline">
+        <summary class="btn sm danger">Delete</summary>
+        <form method="post" action="{% url 'task_action' t.pk 'delete' %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <span class="small">Delete this task permanently?</span>
+          <button class="sm danger">Yes, delete</button>
+        </form>
+      </details>
+    {% endif %}
+  </div>
+</div>

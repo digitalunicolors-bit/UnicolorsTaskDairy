@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="get" class="controls">
+  <label class="inline">Show
+    <select name="show" onchange="this.form.submit()">
+      <option value="open" {% if show == 'open' %}selected{% endif %}>Open tasks</option>
+      <option value="month" {% if show == 'month' %}selected{% endif %}>This month</option>
+      <option value="all" {% if show == 'all' %}selected{% endif %}>Everything</option>
+    </select>
+  </label>
+  <noscript><button class="sm">Apply</button></noscript>
+</form>
+{% include "tasks/_board.html" with admin_view=user.is_admin show_member=False %}
+{% endblock %}

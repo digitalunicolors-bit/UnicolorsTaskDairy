@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="get" class="controls">
+  <label class="inline">Month<input type="month" name="month" value="{{ month|date:'Y-m' }}" onchange="this.form.submit()"></label>
+  {% if user.is_admin %}
+  <label class="inline">Member
+    <select name="member" onchange="this.form.submit()">
+      <option value="all">All members</option>
+      {% for m in members %}<option value="{{ m.id }}" {% if member_id == m.id|stringformat:'s' %}selected{% endif %}>{{ m.display_name }}{% if not m.is_active %} (inactive){% endif %}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <noscript><button class="sm">Apply</button></noscript>
+  <a class="btn" href="{% url 'report_csv' %}?month={{ month|date:'Y-m' }}&member={{ member_id }}">Download CSV (Excel)</a>
+</form>
+
+<div class="stats">
+  <div class="stat"><small>Assigned</small><b>{{ summary.assigned }}</b></div>
+  <div class="stat"><small>Completed</small><b>{{ summary.done }}</b></div>
+  <div class="stat"><small>On time</small><b>{{ summary.on_time }}</b></div>
+  <div class="stat"><small>Late / missed</small><b class="{% if summary.late %}red{% endif %}">{{ summary.late }}</b></div>
+  <div class="stat"><small>Change requests</small><b>{{ summary.changes }}</b></div>
+  <div class="stat"><small>Completion</small><b>{{ summary.pct }}%</b><div class="progress"><i style="width:{{ summary.pct }}%"></i></div></div>
+</div>
+
+{% if not single %}
+<div class="panel">
+  <h2>Member summary <small>{{ month|date:"F Y" }}</small></h2>
+  <div class="scroll">
+    <table class="rep">
+      <thead><tr><th>Member</th><th>Assigned</th><th>Completed</th><th>On time</th><th>Late / missed</th><th>Changes</th><th>Completion</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><td><a class="link" href="?month={{ month|date:'Y-m' }}&member={{ r.user.id }}"><b>{{ r.user.display_name }}</b></a></td>
+          <td>{{ r.summary.assigned }}</td><td>{{ r.summary.done }}</td><td>{{ r.summary.on_time }}</td>
+          <td class="{% if r.summary.late %}red{% endif %}">{{ r.summary.late }}</td><td>{{ r.summary.changes }}</td><td>{{ r.summary.pct }}%</td></tr>
+      {% empty %}<tr><td colspan="7" class="muted">No people yet</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Day by day <small>{% if single %}{{ selected_user.display_name }} · {% endif %}{{ month|date:"F Y" }} · completed / assigned</small></h2>
+  <div class="scroll">
+    <table class="grid">
+      <thead><tr><th class="name"></th>
+        {% for d in days %}<th class="{% if d.weekday == 6 %}sun{% endif %}" title="{{ d|date:'D j M' }}">{{ d.day }}<br><span>{{ d|date:"D"|slice:":1" }}</span></th>{% endfor %}
+        <th>Total</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><th class="name">{{ r.user.display_name }}</th>
+          {% for c in r.cells %}<td class="{{ c.css }}" style="{{ c.style }}" title="{{ c.title }}">{{ c.text }}</td>{% endfor %}
+          <td class="tot">{{ r.summary.done }}/{{ r.summary.assigned }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="legend"><span><i class="all"></i>All done</span><span><i class="part" style="--mix:40%"></i>Partly done</span><span><i class="miss" style="--mix:45%"></i>Missed / overdue</span><span>Counted by due date</span></div>
+</div>
+
+<div class="panel">
+  <h2>Task log</h2>
+  {% for d in log %}
+    <div class="day-block">
+      <div class="day-h">{{ d.day|date:"D, j M" }} <span class="muted">{{ d.summary.done }}/{{ d.summary.assigned }} done</span></div>
+      {% for t in d.tasks %}
+        <div class="day-row">
+          <span class="st s-{{ t.status }}">{{ t.get_status_display }}</span>
+          <span class="t">{{ t.title }}{% if not single %} <span class="muted">· {{ t.assignee.display_name }}</span>{% endif %}</span>
+          <span class="muted small">
+            {% if t.status == "done" %}Approved {{ t.done_at|date:"j M, g:i A" }}{% if t.approved_by %} by {{ t.approved_by.display_name }}{% endif %}{% elif t.submitted_at %}Submitted {{ t.submitted_at|date:"j M, g:i A" }}{% endif %}
+            {% if t.is_late or t.finished_late %} · <b class="red">Late</b>{% endif %}
+            {% if t.change_count %} · {{ t.change_count }} change req.{% endif %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+  {% empty %}<div class="empty">No tasks due in this month.</div>{% endfor %}
+</div>
+{% endblock %}
