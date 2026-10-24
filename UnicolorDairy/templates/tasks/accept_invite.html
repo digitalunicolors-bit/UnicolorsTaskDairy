@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="narrow">
+
+    <div class="panel">
+
+        <h2>Welcome to Unicolors Workspace</h2>
+
+        <p class="muted">
+            Hi {{ invited_user.display_name }},
+        </p>
+
+        <p>
+            Create your password to join your workspace.
+        </p>
+
+        <form method="post" class="stack">
+
+            {% csrf_token %}
+
+            {% for error in form.non_field_errors %}
+                <div class="err">
+                    {{ error }}
+                </div>
+            {% endfor %}
+
+            {% for field in form %}
+
+                <label>
+                    {{ field.label }}
+
+                    {{ field }}
+                </label>
+
+                {% for error in field.errors %}
+                    <div class="err">
+                        {{ error }}
+                    </div>
+                {% endfor %}
+
+            {% endfor %}
+
+            <button
+                type="submit"
+                class="primary"
+            >
+                Create Password & Join Workspace
+            </button>
+
+        </form>
+
+    </div>
+
+</div>
+
+{% endblock %}

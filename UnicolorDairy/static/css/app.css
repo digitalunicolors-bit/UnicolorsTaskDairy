@@ -150,3 +150,34 @@ td.tot{font-weight:800;padding:0 6px}
 .att.voice{flex-direction:column;align-items:stretch}
 .att.voice audio{width:100%;height:32px}
 @media (max-width:760px){.brief-extras{grid-template-columns:1fr}}
+.invite-status{
+    display:inline-flex;
+    align-items:center;
+    padding:4px 9px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:600;
+    margin-left:6px;
+}
+
+.invite-status.pending{
+    color:#f5b942;
+    background:rgba(245,185,66,.12);
+    border:1px solid rgba(245,185,66,.3);
+}
+
+.invite-status.expired{
+    color:#ff666d;
+    background:rgba(237,70,80,.12);
+    border:1px solid rgba(237,70,80,.3);
+}
+
+.invite-status.joined{
+    color:#57d394;
+    background:rgba(87,211,148,.12);
+    border:1px solid rgba(87,211,148,.3);
+}
+
+.invite-btn{
+    white-space:nowrap;
+}

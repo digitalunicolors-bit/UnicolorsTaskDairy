@@ -7,6 +7,10 @@ from django.core.mail import send_mail
 from django.urls import reverse
 
 from .models import User
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+from django.core.mail import EmailMultiAlternatives
 
 log = logging.getLogger(__name__)
 
@@ -82,11 +86,87 @@ def task_changes(task, by):
 
 
 def welcome(user, by):
-    body = (
-        f"Hi {user.display_name},\n\n"
-        f"{by.display_name} added you to Unicolors Daily Tasks as {user.get_role_display()}.\n\n"
-        f"Log in here: {_url('login')}\n"
-        f"Username: {user.username}\n"
-        f"Password: your admin will share it with you. You can change it after logging in.\n"
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+
+    invite_url = (
+        getattr(
+            settings,
+            "SITE_URL",
+            "http://127.0.0.1:8000"
+        ).rstrip("/")
+        + reverse(
+            "accept_invite",
+            kwargs={
+                "uidb64": uid,
+                "token": token,
+            },
+        )
     )
-    _send("You've been added to Unicolors Daily Tasks", body, [user.email])
+
+    subject = "You're invited to Unicolors Workspace"
+
+    text_body = (
+        f"Hi {user.display_name},\n\n"
+        f"{by.display_name} invited you to join "
+        f"Unicolors Daily Tasks as {user.get_role_display()}.\n\n"
+        f"Join Workspace:\n{invite_url}\n"
+    )
+
+    html_body = f"""
+    <div style="
+        font-family:Arial,sans-serif;
+        max-width:560px;
+        margin:30px auto;
+        padding:35px;
+        background:#ffffff;
+        border-radius:14px;
+    ">
+
+        <h2 style="margin-bottom:20px;">
+            You're invited to Unicolors
+        </h2>
+
+        <p>Hi {user.display_name},</p>
+
+        <p style="line-height:1.6;color:#555;">
+            <strong>{by.display_name}</strong> invited you to join
+            <strong>Unicolors Daily Tasks</strong>
+            as {user.get_role_display()}.
+        </p>
+
+        <div style="margin:30px 0;">
+
+            <a href="{invite_url}"
+               style="
+                   background:#ed4650;
+                   color:white;
+                   padding:14px 28px;
+                   border-radius:8px;
+                   text-decoration:none;
+                   font-weight:bold;
+                   display:inline-block;
+               ">
+                Join Workspace
+            </a>
+
+        </div>
+
+        <p style="font-size:13px;color:#888;">
+            This invitation link will expire automatically.
+        </p>
+
+    </div>
+    """
+
+    recipients = [user.email]
+
+    email = EmailMultiAlternatives(
+        subject=f"[Unicolors Tasks] {subject}",
+        body=text_body,
+        from_email=None,
+        to=recipients,
+    )
+
+    email.attach_alternative(html_body, "text/html")
+    email.send()

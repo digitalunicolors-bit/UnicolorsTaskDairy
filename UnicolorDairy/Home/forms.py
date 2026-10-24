@@ -72,22 +72,38 @@ class NoteForm(forms.Form):
 
 
 class UserCreateForm(forms.ModelForm):
-    password = forms.CharField(widget=forms.PasswordInput, help_text="At least 8 characters.")
-
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "username", "email", "designation", "role"]
+        fields = [
+            "first_name",
+            "last_name",
+            "username",
+            "email",
+            "designation",
+            "role",
+        ]
 
-    def clean_password(self):
-        password = self.cleaned_data["password"]
-        validate_password(password)
-        return password
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+
+        if not email:
+            raise forms.ValidationError("Email is required for sending the invitation.")
+
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("A user with this email already exists.")
+
+        return email
 
     def save(self, commit=True):
         user = super().save(commit=False)
-        user.set_password(self.cleaned_data["password"])
+
+        # User cannot log in until invitation is accepted.
+        user.is_active = False
+        user.set_unusable_password()
+
         if commit:
             user.save()
+
         return user
 
 
@@ -109,3 +125,33 @@ class SetPasswordForm(forms.Form):
         password = self.cleaned_data["password"]
         validate_password(password, self.user)
         return password
+
+
+class AcceptInviteForm(forms.Form):
+    password1 = forms.CharField(
+        label="Create password",
+        widget=forms.PasswordInput(
+            attrs={"placeholder": "Create a password"}
+        ),
+    )
+
+    password2 = forms.CharField(
+        label="Confirm password",
+        widget=forms.PasswordInput(
+            attrs={"placeholder": "Confirm password"}
+        ),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+
+        password1 = cleaned.get("password1")
+        password2 = cleaned.get("password2")
+
+        if password1 and password2:
+            if password1 != password2:
+                self.add_error("password2", "Passwords do not match.")
+            else:
+                validate_password(password1)
+
+        return cleaned

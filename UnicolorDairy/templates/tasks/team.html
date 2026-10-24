@@ -1,24 +1,175 @@
 {% extends "base.html" %}
+
 {% block content %}
+
 <div class="panel">
+
   <div class="row-between">
-    <h2>Team <small>admins and members · this month's progress</small></h2>
-    <a class="btn primary" href="{% url 'user_add' %}">+ Add person</a>
-  </div>
-  <p class="muted small">Admins can assign, approve and see everyone's reports. Team members see only their own tasks. Add as many admins as you need.</p>
-  {% for u, s in rows %}
-    <div class="team-row {% if not u.is_active %}inactive{% endif %}">
-      <span class="avatar">{{ u.initials }}</span>
-      <div class="grow">
-        <b>{{ u.display_name }}</b>
-        <span class="role {% if u.is_admin %}admin{% endif %}">{% if u.is_admin %}Admin{% else %}Member{% endif %}</span>
-        <span class="muted">@{{ u.username }}{% if u.designation %} · {{ u.designation }}{% endif %}{% if u == user %} · you{% endif %}{% if not u.is_active %} · inactive{% endif %}</span>
-        <div class="muted small">{{ s.done }}/{{ s.assigned }} done{% if s.late %} · <span class="red">{{ s.late }} late</span>{% endif %}</div>
-        <div class="progress"><i style="width:{{ s.pct }}%"></i></div>
-      </div>
-      <a class="btn sm" href="{% url 'user_edit' u.pk %}">Edit / role</a>
-      <a class="btn sm" href="{% url 'user_password' u.pk %}">Reset password</a>
+
+    <h2>
+      Team
+      <small>
+        admins and members · this month's progress
+      </small>
+    </h2>
+
+    <div class="row">
+
+      <form
+        method="post"
+        action="{% url 'resend_all_invites' %}"
+      >
+        {% csrf_token %}
+
+        <button
+          class="btn"
+          type="submit"
+        >
+          ↻ Resend pending
+        </button>
+
+      </form>
+
+      <a
+        class="btn primary"
+        href="{% url 'user_add' %}"
+      >
+        + Add person
+      </a>
+
     </div>
+
+  </div>
+
+  <p class="muted small">
+    Admins can assign, approve and see everyone's reports.
+    Team members see only their own tasks.
+  </p>
+
+
+  {% for u, s, invite_status in rows %}
+
+    <div class="team-row {% if not u.is_active %}inactive{% endif %}">
+
+      <span class="avatar">
+        {{ u.initials }}
+      </span>
+
+      <div class="grow">
+
+        <div class="member-head">
+
+          <b>
+            {{ u.display_name }}
+          </b>
+
+          <span class="role {% if u.is_admin %}admin{% endif %}">
+            {% if u.is_admin %}
+              Admin
+            {% else %}
+              Member
+            {% endif %}
+          </span>
+
+
+          {% if u != user %}
+
+            {% if invite_status == "joined" %}
+
+              <span class="invite-status joined">
+                ✓ Joined
+              </span>
+
+            {% elif invite_status == "expired" %}
+
+              <span class="invite-status expired">
+                ⚠ Invite expired
+              </span>
+
+            {% elif invite_status == "pending" %}
+
+              <span class="invite-status pending">
+                ● Invite pending
+              </span>
+
+            {% endif %}
+
+          {% endif %}
+
+        </div>
+
+
+        <span class="muted">
+
+          @{{ u.username }}
+
+          {% if u.designation %}
+            · {{ u.designation }}
+          {% endif %}
+
+          {% if u == user %}
+            · you
+          {% endif %}
+
+        </span>
+
+
+        <div class="muted small">
+
+          {{ s.done }}/{{ s.assigned }} done
+
+          {% if s.late %}
+
+            ·
+            <span class="red">
+              {{ s.late }} late
+            </span>
+
+          {% endif %}
+
+        </div>
+
+
+        <div class="progress">
+          <i style="width:{{ s.pct }}%"></i>
+        </div>
+
+      </div>
+
+
+      {% if u != user and invite_status != "joined" %}
+
+        <form
+          method="post"
+          action="{% url 'resend_invite' u.pk %}"
+        >
+          {% csrf_token %}
+
+          <button
+            type="submit"
+            class="btn sm invite-btn"
+          >
+            ↻ Resend invite
+          </button>
+
+        </form>
+
+      {% endif %}
+
+
+      <a
+        class="btn sm"
+        href="{% url 'user_edit' u.pk %}"
+      >
+        Edit / role
+      </a>
+
+      
+
+    </div>
+
   {% endfor %}
+
 </div>
+
 {% endblock %}

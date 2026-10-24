@@ -1,6 +1,7 @@
 from datetime import date
+from datetime import timedelta
 from functools import wraps
-
+from django.contrib.auth import login
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -11,9 +12,17 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
-
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
+from django.contrib.auth.tokens import default_token_generator
 from . import notifications, reports
-from .forms import AssignTaskForm, SetPasswordForm, UserCreateForm, UserEditForm
+from .forms import (
+    AssignTaskForm,
+    SetPasswordForm,
+    UserCreateForm,
+    UserEditForm,
+    AcceptInviteForm,
+)
 from .models import Task, TaskActivity, TaskAttachment, User
 
 S = Task.Status
@@ -298,22 +307,112 @@ def report_csv(request):
 @admin_required
 def team(request):
     today = timezone.localdate()
-    users = list(User.objects.all())
-    month_tasks = list(Task.objects.filter(due_date__year=today.year, due_date__month=today.month))
-    rows = [(u, reports.summarize([t for t in month_tasks if t.assignee_id == u.id])) for u in users]
-    rows.sort(key=lambda r: (not r[0].is_active, not r[0].is_admin, r[0].display_name.lower()))
-    return render(request, "tasks/team.html", {"rows": rows})
+
+    users = list(
+        User.objects.all()
+    )
+
+    month_tasks = list(
+        Task.objects.filter(
+            due_date__year=today.year,
+            due_date__month=today.month
+        )
+    )
+
+    expiry_hours = getattr(
+        settings,
+        "INVITE_EXPIRY_HOURS",
+        72
+    )
+
+    now = timezone.now()
+
+    rows = []
+
+    for u in users:
+        summary = reports.summarize(
+            [
+                t for t in month_tasks
+                if t.assignee_id == u.id
+            ]
+        )
+
+        if u.invite_accepted_at:
+            invite_status = "joined"
+
+        elif not u.invite_sent_at:
+            invite_status = "none"
+
+        elif now > (
+            u.invite_sent_at
+            + timedelta(hours=expiry_hours)
+        ):
+            invite_status = "expired"
+
+        else:
+            invite_status = "pending"
+
+        rows.append(
+            (
+                u,
+                summary,
+                invite_status
+            )
+        )
+
+    rows.sort(
+        key=lambda r: (
+            not r[0].is_active,
+            not r[0].is_admin,
+            r[0].display_name.lower()
+        )
+    )
+
+    return render(
+        request,
+        "tasks/team.html",
+        {
+            "rows": rows
+        },
+    )
 
 
 @admin_required
 def user_add(request):
     form = UserCreateForm(request.POST or None)
+
     if request.method == "POST" and form.is_valid():
         user = form.save()
-        notifications.welcome(user, request.user)
-        messages.success(request, f"{user.display_name} added as {user.get_role_display()}. Share their username and password with them.")
+
+        user.invite_sent_at = timezone.now()
+        user.invite_accepted_at = None
+        user.save(
+            update_fields=[
+                "invite_sent_at",
+                "invite_accepted_at"
+            ]
+        )
+
+        notifications.welcome(
+            user,
+            request.user
+        )
+
+        messages.success(
+            request,
+            f"Invitation sent to {user.email}."
+        )
+
         return redirect("team")
-    return render(request, "tasks/user_form.html", {"form": form, "title": "Add a person"})
+
+    return render(
+        request,
+        "tasks/user_form.html",
+        {
+            "form": form,
+            "title": "Add a person"
+        },
+    )
 
 
 @admin_required
@@ -340,3 +439,189 @@ def user_password(request, pk):
         messages.success(request, f"New password set for {person.display_name}.")
         return redirect("team")
     return render(request, "tasks/user_form.html", {"form": form, "title": f"Reset password – {person.display_name}"})
+
+
+def accept_invite(request, uidb64, token):
+    try:
+        user_id = force_str(urlsafe_base64_decode(uidb64))
+        person = User.objects.get(pk=user_id)
+
+    except (
+        TypeError,
+        ValueError,
+        OverflowError,
+        User.DoesNotExist,
+    ):
+        person = None
+
+    if person is None:
+        messages.error(request, "This invitation link is invalid.")
+        return redirect("login")
+
+    # If already accepted, send user to login
+    if person.invite_accepted_at:
+        messages.info(
+            request,
+            "This invitation has already been accepted. Please log in."
+        )
+        return redirect("login")
+
+    # Check invitation expiry
+    expiry_hours = getattr(
+        settings,
+        "INVITE_EXPIRY_HOURS",
+        72
+    )
+
+    if person.invite_sent_at:
+        expiry_time = (
+            person.invite_sent_at
+            + timedelta(hours=expiry_hours)
+        )
+
+        if timezone.now() > expiry_time:
+            messages.error(
+                request,
+                "This invitation has expired. "
+                "Please ask your administrator to resend it."
+            )
+            return redirect("login")
+
+    # Check security token
+    if not default_token_generator.check_token(person, token):
+        messages.error(
+            request,
+            "This invitation link is invalid or expired."
+        )
+        return redirect("login")
+
+    # Show password form
+    form = AcceptInviteForm(request.POST or None)
+
+    if request.method == "POST" and form.is_valid():
+
+        # Set employee's chosen password
+        person.set_password(
+            form.cleaned_data["password1"]
+        )
+
+        # Activate employee
+        person.is_active = True
+
+        # Mark invitation accepted
+        person.invite_accepted_at = timezone.now()
+
+        person.save(
+            update_fields=[
+                "password",
+                "is_active",
+                "invite_accepted_at",
+            ]
+        )
+
+        # Automatically login employee
+        login(
+            request,
+            person,
+            backend="Home.backends.EmailOrUsernameBackend",
+        )
+
+        messages.success(
+            request,
+            "Welcome! Your account is ready."
+        )
+
+        # Directly open employee's own dashboard
+        return redirect("my_tasks")
+
+    return render(
+        request,
+        "tasks/accept_invite.html",
+        {
+            "form": form,
+            "invited_user": person,
+        },
+    )
+
+
+@admin_required
+@require_POST
+def resend_invite(request, pk):
+    person = get_object_or_404(
+        User,
+        pk=pk
+    )
+
+    if person.invite_accepted_at:
+        messages.info(
+            request,
+            f"{person.display_name} has already joined."
+        )
+
+        return redirect("team")
+
+    if not person.email:
+        messages.error(
+            request,
+            f"{person.display_name} does not have an email address."
+        )
+
+        return redirect("team")
+
+    # Updating this creates a fresh expiry window.
+    person.invite_sent_at = timezone.now()
+
+    person.save(
+        update_fields=[
+            "invite_sent_at"
+        ]
+    )
+
+    notifications.welcome(
+        person,
+        request.user
+    )
+
+    messages.success(
+        request,
+        f"Invitation resent to {person.email}."
+    )
+
+    return redirect("team")
+
+
+@admin_required
+@require_POST
+def resend_all_invites(request):
+    people = User.objects.filter(
+        invite_accepted_at__isnull=True
+    ).exclude(
+        email=""
+    ).exclude(
+        pk=request.user.pk
+    )
+
+    count = 0
+
+    for person in people:
+        person.invite_sent_at = timezone.now()
+
+        person.save(
+            update_fields=[
+                "invite_sent_at"
+            ]
+        )
+
+        notifications.welcome(
+            person,
+            request.user
+        )
+
+        count += 1
+
+    messages.success(
+        request,
+        f"{count} invitation(s) resent."
+    )
+
+    return redirect("team")

@@ -13,6 +13,8 @@ class User(AbstractUser):
 
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.MEMBER)
     designation = models.CharField(max_length=60, blank=True, help_text="e.g. Designer, Editor")
+    invite_sent_at = models.DateTimeField(null=True, blank=True)
+    invite_accepted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["first_name", "last_name", "username"]
