@@ -26,7 +26,7 @@
       {% if not form.assignees %}<span class="muted">No people yet — add them in the Team tab.</span>{% endif %}
     </div>
 
-    <label class="full">Details (optional){{ form.details }}</label>
+    <label class="full">Details (optional · type @ to tag someone){{ form.details }}</label>
     <div class="full brief-extras">
       <label class="fl">Attachments (optional · up to 10 files, max {{ max_upload_mb }} MB each)
         <input type="file" name="attachments" multiple>
@@ -76,10 +76,15 @@
 </p>
 
 {% include "tasks/_board.html" with admin_view=True show_member=True %}
+{{ mention_people|json_script:"assign-people" }}
 {% endblock %}
 
 {% block scripts %}{% load static %}
 <script src="{% static 'js/voice.js' %}"></script>
+<script>
+// Typing @ in the assign form's Details box tags people.
+if (window.Mentions) Mentions.attach(document.getElementById("id_details"), Mentions.readPeople("assign-people"));
+</script>
 <script>
 // Picking a single date, or both From and To, switches "Show" to "Custom dates".
 (function () {

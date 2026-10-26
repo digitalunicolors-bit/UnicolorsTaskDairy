@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
@@ -42,6 +44,27 @@ class User(AbstractUser):
         return self.display_name
 
 
+def active_admins():
+    return User.objects.filter(is_active=True).filter(models.Q(role=User.Role.ADMIN) | models.Q(is_superuser=True))
+
+
+# "@username" anywhere in text (but not inside an email address like a@b.com)
+MENTION_RE = re.compile(r"(?<![\w@])@([\w.@+-]+)")
+MENTION_TRIM = ".,!?;:"
+
+
+def find_mentioned_users(text):
+    """Active users tagged as @username in the text."""
+    names = {m.group(1).rstrip(MENTION_TRIM).lower() for m in MENTION_RE.finditer(text or "")}
+    names.discard("")
+    if not names:
+        return []
+    q = models.Q()
+    for n in names:
+        q |= models.Q(username__iexact=n)
+    return list(User.objects.filter(is_active=True).filter(q))
+
+
 class Task(models.Model):
     class Status(models.TextChoices):
         TODO = "todo", "To Do"
@@ -79,6 +102,9 @@ class Task(models.Model):
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
+    watchers = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="watched_tasks", help_text="People tagged on this task"
+    )
 
     class Meta:
         ordering = ["due_date", "created_at"]
@@ -86,6 +112,10 @@ class Task(models.Model):
 
     def __str__(self):
         return self.title
+
+    def can_view(self, user):
+        """Admins, the person it's assigned to, and anyone tagged on it."""
+        return user.is_admin or self.assignee_id == user.id or self.watchers.filter(pk=user.pk).exists()
 
     @property
     def is_late(self):
@@ -175,10 +205,13 @@ class Notification(models.Model):
         CHANGES = "changes", "Changes requested"
         REOPENED = "reopened", "Reopened"
         DELETED = "deleted", "Deleted"
+        COMMENTED = "commented", "Commented"
+        MENTIONED = "mentioned", "Mentioned"
 
     ICONS = {
         "assigned": "📌", "started": "▶️", "submitted": "📤", "approved": "✅",
         "changes": "✏️", "reopened": "↩️", "deleted": "🗑️",
+        "commented": "💬", "mentioned": "@",
     }
 
     # (message for the person the task belongs to, message for everyone else)
@@ -190,6 +223,8 @@ class Notification(models.Model):
         "changes": ("{actor} requested changes on “{title}”", "{actor} requested changes on “{title}”{for_owner}"),
         "reopened": ("{actor} reopened “{title}”", "{actor} reopened “{title}”{for_owner}"),
         "deleted": ("{actor} deleted your task “{title}”", "{actor} deleted “{title}”{for_owner}"),
+        "commented": ("{actor} commented on your task “{title}”", "{actor} commented on “{title}”{for_owner}"),
+        "mentioned": ("{actor} mentioned you on “{title}”", "{actor} mentioned you on “{title}”{for_owner}"),
     }
 
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
@@ -219,8 +254,7 @@ class Notification(models.Model):
         """
         owner = task.assignee
         if recipients is None:
-            admins = User.objects.filter(is_active=True).filter(models.Q(role=User.Role.ADMIN) | models.Q(is_superuser=True))
-            recipients = [owner, *admins]
+            recipients = [owner, *active_admins()]
         mine, others = cls.TEXTS[verb]
         values = {
             "actor": actor.display_name,
@@ -239,3 +273,19 @@ class Notification(models.Model):
                 text += f": {note}"
             items.append(cls(recipient=person, actor=actor, task=task, verb=verb, message=text[:300]))
         cls.objects.bulk_create(items)
+
+
+class TaskComment(models.Model):
+    """A comment on a task. Type @username to tag someone."""
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    body = models.TextField()
+    mentions = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.author}: {self.body[:40]}"

@@ -1,0 +1,31 @@
+{% load notiftags %}<div class="comments" data-comments>
+  <h3>Comments <span class="muted">({{ comments|length }})</span></h3>
+
+  {% for c in comments %}
+    <div class="comment">
+      <span class="avatar sm">{{ c.author.initials|default:"?" }}</span>
+      <div class="comment-body">
+        <div class="comment-meta">
+          <b>{{ c.author.display_name|default:"Removed user" }}</b>
+          <span class="muted small">{{ c.created_at|date:"j M, g:i A" }} · {{ c.created_at|timesince }} ago</span>
+          {% if user.is_admin or c.author_id == user.id %}
+            <form method="post" action="{% url 'task_comment_delete' c.pk %}" data-comment-form data-confirm="Delete this comment?">{% csrf_token %}
+              <button class="link-btn" title="Delete comment">Delete</button>
+            </form>
+          {% endif %}
+        </div>
+        <div class="comment-text">{{ c.body|mentionize|linebreaksbr }}</div>
+      </div>
+    </div>
+  {% empty %}
+    <p class="muted small">No comments yet. Type <b>@</b> to tag someone from the team.</p>
+  {% endfor %}
+
+  <form method="post" action="{% url 'task_comment' t.pk %}" class="comment-form" data-comment-form>{% csrf_token %}
+    <textarea name="body" rows="2" maxlength="2000" required placeholder="Write a comment… type @ to tag someone" data-mentions></textarea>
+    <div class="row-between">
+      <span class="muted small">Ctrl + Enter to post</span>
+      <button class="sm primary">Post comment</button>
+    </div>
+  </form>
+</div>

@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Count
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -25,7 +26,10 @@ from .forms import (
     UserEditForm,
     AcceptInviteForm,
 )
-from .models import Notification, Task, TaskActivity, TaskAttachment, User
+from .models import (
+    Notification, Task, TaskActivity, TaskAttachment, TaskComment, User,
+    active_admins, find_mentioned_users,
+)
 
 S = Task.Status
 
@@ -78,6 +82,14 @@ def _log(task, user, action, note=""):
     TaskActivity.objects.create(task=task, actor=user, action=action, note=note)
 
 
+def _mention_people():
+    """Everyone who can be tagged with @, for the autocomplete list."""
+    return [
+        {"u": u.username, "n": u.display_name, "i": u.initials, "d": u.designation}
+        for u in User.objects.filter(is_active=True)
+    ]
+
+
 def _safe_next(request, default):
     """Only allow redirects back to a page on this site."""
     back = request.POST.get("next") or request.GET.get("next") or ""
@@ -125,7 +137,10 @@ def dashboard(request):
         show, mode = "today", "single"
         start = end = today
 
-    qs = Task.objects.select_related("assignee").prefetch_related("attachments")
+    qs = (
+        Task.objects.select_related("assignee").prefetch_related("attachments")
+        .annotate(comment_count=Count("comments", distinct=True))
+    )
     if member_id != "all":
         qs = qs.filter(assignee_id=member_id)
 
@@ -151,6 +166,7 @@ def dashboard(request):
         "end": end,
         "member_id": member_id,
         "members": User.objects.filter(is_active=True),
+        "mention_people": _mention_people(),
         "is_admin_view": True,
         "max_upload_mb": getattr(settings, "MAX_UPLOAD_MB", 20),
     })
@@ -182,6 +198,10 @@ def assign_task(request):
                 att.file.save(name, ContentFile(content), save=True)
             _log(task, request.user, TaskActivity.Action.ASSIGNED)
             Notification.send(task, request.user, "assigned", recipients=[user])
+            tagged = [u for u in find_mentioned_users(task.details) if u.pk not in (user.pk, request.user.pk)]
+            if tagged:
+                task.watchers.add(*tagged)
+                Notification.send(task, request.user, "mentioned", recipients=tagged)
             transaction.on_commit(lambda t=task: notifications.task_assigned(t, request.user))
     names = ", ".join(u.display_name for u in data["assignees"])
     messages.success(request, f'"{data["title"]}" assigned to {names}.')
@@ -259,7 +279,7 @@ def task_detail(request, pk):
     task = get_object_or_404(
         Task.objects.select_related("assignee", "assigned_by", "approved_by").prefetch_related("attachments"), pk=pk
     )
-    if not (request.user.is_admin or task.assignee_id == request.user.id):
+    if not task.can_view(request.user):
         raise PermissionDenied
     back = request.GET.get("next", "")
     if not back.startswith("/") or back.startswith("//"):
@@ -267,16 +287,62 @@ def task_detail(request, pk):
     return render(request, "tasks/_task_detail.html", {
         "t": task,
         "activity": list(task.activity.select_related("actor")),
+        "comments": list(task.comments.select_related("author")),
+        "people": _mention_people(),
         "next": back,
         "admin_view": request.user.is_admin,
     })
+
+
+def _comments_response(request, task):
+    """Send back the refreshed comments list (used by the pop-up)."""
+    if request.headers.get("X-Requested-With") != "fetch":
+        return redirect(_safe_next(request, "home"))
+    return render(request, "tasks/_comments.html", {
+        "t": task,
+        "comments": list(task.comments.select_related("author")),
+    })
+
+
+@login_required
+@require_POST
+def task_comment(request, pk):
+    task = get_object_or_404(Task.objects.select_related("assignee"), pk=pk)
+    if not task.can_view(request.user):
+        raise PermissionDenied
+    body = request.POST.get("body", "").strip()[:2000]
+    if body:
+        comment = TaskComment.objects.create(task=task, author=request.user, body=body)
+        tagged = [u for u in find_mentioned_users(body) if u.pk != request.user.pk]
+        if tagged:
+            comment.mentions.set(tagged)
+            task.watchers.add(*tagged)
+            Notification.send(task, request.user, "mentioned", body, recipients=tagged)
+        # Everyone else involved hears about the new comment.
+        tagged_ids = {u.pk for u in tagged}
+        commenters = User.objects.filter(pk__in=task.comments.values("author"))
+        involved = [task.assignee, *active_admins(), *task.watchers.all(), *commenters]
+        Notification.send(task, request.user, "commented", body,
+                          recipients=[p for p in involved if p.pk not in tagged_ids])
+    return _comments_response(request, task)
+
+
+@login_required
+@require_POST
+def task_comment_delete(request, pk):
+    comment = get_object_or_404(TaskComment.objects.select_related("task"), pk=pk)
+    if not (request.user.is_admin or comment.author_id == request.user.id):
+        raise PermissionDenied
+    task = comment.task
+    comment.delete()
+    return _comments_response(request, task)
 
 
 @login_required
 def attachment(request, pk):
     """Serve a task file only to the person it's assigned to, and to admins."""
     att = get_object_or_404(TaskAttachment.objects.select_related("task"), pk=pk)
-    if not (request.user.is_admin or att.task.assignee_id == request.user.id):
+    if not att.task.can_view(request.user):
         raise PermissionDenied
     try:
         handle = att.file.open("rb")
@@ -295,7 +361,10 @@ def attachment(request, pk):
 def my_tasks(request):
     show = request.GET.get("show", "open")
     today = timezone.localdate()
-    qs = Task.objects.filter(assignee=request.user).select_related("assignee").prefetch_related("attachments")
+    qs = (
+        Task.objects.filter(assignee=request.user).select_related("assignee").prefetch_related("attachments")
+        .annotate(comment_count=Count("comments", distinct=True))
+    )
     if show == "month":
         qs = qs.filter(due_date__year=today.year, due_date__month=today.month)
     elif show == "all":
