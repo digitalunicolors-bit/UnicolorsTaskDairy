@@ -10,7 +10,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from . import notifications
-from .models import Notification, Task, TaskReminder
+from .models import Notification, Task, TaskReminder, active_admins
 
 log = logging.getLogger(__name__)
 
@@ -52,3 +52,42 @@ def send_due_reminders(today=None):
             sent += 1
             log.info("Sent %s reminder for task %s to %s", kind, task.pk, task.assignee)
     return sent
+
+
+def send_overdue_alerts(today=None):
+    """Tell admins about tasks that passed their due date without being submitted.
+
+    Each task is reported once (per due date), in one summary email per admin.
+    Returns how many tasks were reported.
+    """
+    today = today or timezone.localdate()
+    tasks = (
+        Task.objects.filter(due_date__lt=today, status__in=NEEDS_WORK, assignee__is_active=True)
+        .select_related("assignee", "assigned_by")
+        .order_by("due_date")
+    )
+    newly_overdue = []
+    for task in tasks:
+        try:
+            with transaction.atomic():
+                TaskReminder.objects.create(task=task, kind=TaskReminder.Kind.OVERDUE, due_date=task.due_date)
+        except IntegrityError:
+            continue  # admins already told about this one
+        newly_overdue.append(task)
+    if not newly_overdue:
+        return 0
+
+    admins = list(active_admins())
+    Notification.objects.bulk_create([
+        Notification(
+            recipient=admin,
+            task=task,
+            verb=Notification.Verb.OVERDUE,
+            message=f"Overdue: “{task.title}” ({task.assignee.display_name}) was due {task.due_date:%d %b}"[:300],
+        )
+        for task in newly_overdue
+        for admin in admins
+    ])
+    notifications.overdue_digest(newly_overdue, today)
+    log.info("Overdue alert sent for %s task(s)", len(newly_overdue))
+    return len(newly_overdue)

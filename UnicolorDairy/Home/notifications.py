@@ -30,6 +30,7 @@ STYLES = {
     "reminder_week": ("#2f6fde", "#eef3fd", "⏰", "Due in 7 days"),
     "reminder_day": ("#b7791f", "#fdf6e9", "⏰", "Due tomorrow"),
     "reminder_due": ("#d93d42", "#fdeeee", "⏰", "Due today"),
+    "overdue": ("#d93d42", "#fdeeee", "⚠️", "Overdue"),
 }
 PRIORITY_COLORS = {"high": "#d93d42", "medium": "#b7791f", "low": "#2a9d5c"}
 
@@ -69,7 +70,8 @@ def _task_rows(task):
     return rows
 
 
-def _context(kind, subject, heading, greeting_name, intro, rows=(), notes=(), button=None, footer="", preheader=""):
+def _context(kind, subject, heading, greeting_name, intro, rows=(), notes=(), button=None, footer="", preheader="",
+             task_list=()):
     color, bg, icon, label = STYLES[kind]
     if button:
         button.setdefault("color", color if kind != "welcome" else "#e5484d")
@@ -81,6 +83,7 @@ def _context(kind, subject, heading, greeting_name, intro, rows=(), notes=(), bu
         "greeting_name": greeting_name,
         "intro": intro,
         "rows": list(rows),
+        "task_list": list(task_list),
         "notes": [n for n in notes if n.get("text")],
         "button": button,
         "footer": footer,
@@ -95,6 +98,10 @@ def _plain_text(ctx):
     if ctx["rows"]:
         width = max(len(r["label"]) for r in ctx["rows"])
         lines += [f"  {r['label']:<{width}} : {r['value']}" for r in ctx["rows"]]
+        lines.append("")
+    for t in ctx.get("task_list", []):
+        lines += [f"  • {t['title']} — {t['who']} · due {t['due']} · {t['late']} · {t['status']}", f"    {t['url']}"]
+    if ctx.get("task_list"):
         lines.append("")
     for n in ctx["notes"]:
         lines += [f"{n['label']}:", *[f"  {line}" for line in str(n["text"]).splitlines()], ""]
@@ -142,12 +149,16 @@ def _admin_emails(exclude=None):
 
 
 def task_assigned(task, by):
+    if task.recurring_id:
+        intro = f"Your recurring task for {task.occurrence_date:%A, %d %b} is ready ({task.recurring.schedule_label})."
+    else:
+        intro = f"{by.display_name if by else 'Unicolors Tasks'} assigned you a new task. Here are the details:"
     ctx = _context(
         "assigned",
         subject=f"New task: {task.title}",
         heading=task.title,
         greeting_name=task.assignee.first_name or task.assignee.display_name,
-        intro=f"{by.display_name} assigned you a new task. Here are the details:",
+        intro=intro,
         rows=_task_rows(task),
         notes=[{"label": "Brief", "text": task.details, "color": "#2f6fde"}],
         button={"label": "Open task", "url": _task_link(task, for_admin=False)},
@@ -225,6 +236,33 @@ def task_reminder(task, kind):
         footer="You're getting this because the task is assigned to you and isn't complete yet.",
     )
     _send(ctx, [task.assignee.email], background=False)
+
+
+def overdue_digest(tasks, today):
+    """One summary email to each admin listing tasks that just became overdue."""
+    n = len(tasks)
+    items = []
+    for t in tasks:
+        days = (today - t.due_date).days
+        items.append({
+            "title": t.title,
+            "who": t.assignee.display_name,
+            "due": f"{t.due_date:%d %b}",
+            "late": "1 day late" if days == 1 else f"{days} days late",
+            "status": t.get_status_display(),
+            "url": _task_link(t, for_admin=True),
+        })
+    ctx = _context(
+        "overdue",
+        subject=f"{n} task{'s' if n != 1 else ''} overdue",
+        heading=f"{n} task{'s have' if n != 1 else ' has'} passed the due date",
+        greeting_name="team",
+        intro="These tasks passed their due date and haven't been submitted for approval yet:",
+        task_list=items,
+        button={"label": "Open dashboard", "url": _url("dashboard")},
+        footer="Each overdue task is reported once. Click a task to open it, or reach out to the person directly.",
+    )
+    _send(ctx, _admin_emails(), background=False)
 
 
 def welcome(user, by):

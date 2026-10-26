@@ -22,6 +22,13 @@ urlpatterns = [
     path("team/<int:pk>/resend-invite/", views.resend_invite, name="resend_invite"),
     path("team/resend-invites/", views.resend_all_invites, name="resend_all_invites"),
 
+    # search & recurring tasks
+    path("search/", views.search, name="search"),
+    path("recurring/", views.recurring_list, name="recurring"),
+    path("recurring/<int:pk>/edit/", views.recurring_list, name="recurring_edit"),
+    path("recurring/<int:pk>/toggle/", views.recurring_toggle, name="recurring_toggle"),
+    path("recurring/<int:pk>/delete/", views.recurring_delete, name="recurring_delete"),
+
     # notifications
     path("notifications/", views.notification_list, name="notification_list"),
     path("notifications/count/", views.notifications_count, name="notifications_count"),

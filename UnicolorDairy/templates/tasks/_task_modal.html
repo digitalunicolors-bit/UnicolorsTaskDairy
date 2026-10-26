@@ -1,0 +1,63 @@
+{# Task detail pop-up. Included by the board and the search page. #}
+{% load static %}
+<script src="{% static 'js/mentions.js' %}"></script>
+
+<dialog class="modal" id="taskModal" data-url="{% url 'task_detail' 0 %}" aria-label="Task details">
+  <div class="modal-inner" data-modal-body></div>
+</dialog>
+
+<script>
+// Click a card to see its full details.
+(function () {
+  const dlg = document.getElementById("taskModal");
+  if (!dlg) return;
+  const body = dlg.querySelector("[data-modal-body]");
+
+  async function openTask(id) {
+    body.innerHTML = '<div class="empty">Loading…</div>';
+    if (!dlg.open) dlg.showModal();
+    try {
+      const url = dlg.dataset.url.replace("/0/", "/" + id + "/") + "?next=" + encodeURIComponent(location.pathname + location.search);
+      const r = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
+      if (!r.ok) {
+        // Show what went wrong, with a link to the full error page.
+        const why = r.status === 403 ? "You don't have access to this task."
+                  : r.status === 404 ? "This task no longer exists, or the task page isn't set up yet (check urls.py)."
+                  : "The server hit an error (" + r.status + ").";
+        body.innerHTML = '<div class="empty">' + why + '</div>' +
+          '<div class="actions">' + (r.status >= 500 ? '<a class="btn sm" target="_blank" href="' + url + '">See error details</a>' : '') +
+          '<button type="button" class="sm" data-close>Close</button></div>';
+        return;
+      }
+      body.innerHTML = await r.text();
+      if (window.Mentions) Mentions.initComments(body, Mentions.readPeople("comment-people"));
+    } catch (e) {
+      body.innerHTML = '<div class="empty">Couldn\'t reach the server. Check that it is running, then try again.</div>' +
+        '<div class="actions"><button type="button" class="sm" data-close>Close</button></div>';
+    }
+  }
+
+  // Board cards, and any element marked data-open-task="ID" (e.g. search results).
+  document.querySelectorAll(".board .card, [data-open-task]").forEach(el => {
+    const id = el.dataset.openTask || el.dataset.id;
+    el.addEventListener("click", e => {
+      // Buttons, links, note boxes and audio on the card keep working as before.
+      if (e.target.closest("a, button, form, details, summary, audio, textarea, input, select")) return;
+      if (String(window.getSelection())) return;   // user was selecting text
+      openTask(id);
+    });
+    if (el.dataset.openTask) el.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(id); }
+    });
+  });
+
+  dlg.addEventListener("click", e => {
+    if (e.target === dlg || e.target.closest("[data-close]")) dlg.close();   // backdrop or close button
+  });
+  dlg.addEventListener("close", () => body.querySelectorAll("audio").forEach(a => a.pause()));
+
+  // Opened from a notification link (…#task-12): show that task straight away.
+  const m = location.hash.match(/^#task-(\d+)$/);
+  if (m) openTask(m[1]);
+})();
+</script>

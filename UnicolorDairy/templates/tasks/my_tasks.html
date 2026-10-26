@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
+<form method="get" action="{% url 'search' %}" class="search-bar" role="search">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+  <input type="search" name="q" placeholder="Search tasks, briefs and comments…" aria-label="Search tasks">
+</form>
+
 <form method="get" class="controls">
   <label class="inline">Show
     <select name="show" onchange="this.form.submit()">

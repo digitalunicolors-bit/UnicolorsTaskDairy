@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="panel">
-  <h2>Assign a task</h2>
+  <div class="row-between assign-head">
+    <h2>Assign a task</h2>
+    <a class="btn sm" href="{% url 'recurring' %}">↻ Recurring tasks</a>
+  </div>
   <form method="post" action="{% url 'assign_task' %}" class="form-grid" enctype="multipart/form-data">
     {% csrf_token %}
     <label class="t">Task{{ form.title }}</label>
@@ -44,6 +47,11 @@
     <div class="full"><button class="primary" type="submit">Assign task</button></div>
   </form>
 </div>
+
+<form method="get" action="{% url 'search' %}" class="search-bar" role="search">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+  <input type="search" name="q" placeholder="Search tasks, briefs and comments…" aria-label="Search tasks">
+</form>
 
 <form method="get" class="controls" id="filters">
   <label class="inline">Show

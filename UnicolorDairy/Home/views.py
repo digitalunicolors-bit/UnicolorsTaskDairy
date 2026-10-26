@@ -7,27 +7,29 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Prefetch, Q
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
 from django.views.decorators.http import require_POST
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from django.contrib.auth.tokens import default_token_generator
-from . import notifications, reports
+from . import notifications, recurring, reports
 from .forms import (
     AssignTaskForm,
     SetPasswordForm,
     UserCreateForm,
     UserEditForm,
     AcceptInviteForm,
+    RecurringTaskForm,
 )
 from .models import (
-    Notification, Task, TaskActivity, TaskAttachment, TaskComment, User,
+    Notification, RecurringTask, Task, TaskActivity, TaskAttachment, TaskComment, User,
     active_admins, find_mentioned_users,
 )
 
@@ -811,3 +813,132 @@ def notifications_read_all(request):
 @login_required
 def notifications_count(request):
     return JsonResponse({"unread": request.user.notifications.filter(is_read=False).count()})
+
+
+# ---------------------------------------------------------------- search
+
+
+def _highlight(text, q, width=70):
+    """A short piece of `text` around the first match of `q`, with the match marked. None if no match."""
+    text = text or ""
+    i = text.lower().find(q.lower())
+    if i < 0:
+        return None
+    start, end = max(0, i - width), min(len(text), i + len(q) + width)
+    before = ("…" if start else "") + text[start:i]
+    after = text[i + len(q):end] + ("…" if end < len(text) else "")
+    return format_html("{}<mark>{}</mark>{}", before, text[i:i + len(q)], after)
+
+
+@login_required
+def search(request):
+    q = request.GET.get("q", "").strip()[:100]
+    status = request.GET.get("status", "all")
+    results = []
+    if q:
+        allowed = Task.objects.all()
+        if not request.user.is_admin:
+            allowed = allowed.filter(Q(assignee=request.user) | Q(watchers=request.user))
+        match = (
+            Q(title__icontains=q) | Q(details__icontains=q) | Q(member_note__icontains=q)
+            | Q(admin_note__icontains=q) | Q(comments__body__icontains=q)
+        )
+        ids = allowed.filter(match).values("id")
+        qs = (
+            Task.objects.filter(id__in=ids)
+            .select_related("assignee")
+            .annotate(comment_count=Count("comments", distinct=True))
+            .prefetch_related(Prefetch(
+                "comments",
+                queryset=TaskComment.objects.filter(body__icontains=q).select_related("author"),
+                to_attr="matching_comments",
+            ))
+            .order_by("-due_date", "-created_at")
+        )
+        if status == "open":
+            qs = qs.exclude(status=S.DONE)
+        elif status == "done":
+            qs = qs.filter(status=S.DONE)
+        else:
+            status = "all"
+        for t in qs[:100]:
+            where, snippet = None, None
+            for label, text in (("Brief", t.details), ("Their note", t.member_note), ("Change request", t.admin_note)):
+                snippet = _highlight(text, q)
+                if snippet:
+                    where = label
+                    break
+            if not snippet and t.matching_comments:
+                c = t.matching_comments[0]
+                where = f"Comment by {c.author.display_name if c.author else 'someone'}"
+                snippet = _highlight(c.body, q)
+            results.append({
+                "task": t,
+                "title": _highlight(t.title, q, width=200) or t.title,
+                "where": where,
+                "snippet": snippet,
+            })
+    return render(request, "tasks/search.html", {"q": q, "status": status, "results": results})
+
+
+# ---------------------------------------------------------------- recurring tasks
+
+
+@admin_required
+def recurring_list(request, pk=None):
+    """List of repeating tasks, with the form to add one (or edit one when pk is given)."""
+    editing = get_object_or_404(RecurringTask, pk=pk) if pk else None
+    form = RecurringTaskForm(request.POST or None, instance=editing)
+    if request.method == "POST" and form.is_valid():
+        rule = form.save(commit=False)
+        if not rule.created_by_id:
+            rule.created_by = request.user
+        rule.save()
+        form.save_m2m()
+        # If today is one of its days and today's batch already ran, create today's task now.
+        now = timezone.localtime()
+        made = 0
+        if now.hour >= getattr(settings, "RECURRING_HOUR", 8):
+            made = recurring.create_recurring_tasks(now.date(), rules=[rule])
+        msg = f'Saved "{rule.title}" · {rule.schedule_label}.'
+        if made:
+            msg += f" Today's task was created for {made} person{'s' if made != 1 else ''}."
+        messages.success(request, msg)
+        return redirect("recurring")
+
+    today = timezone.localdate()
+    rules = (
+        RecurringTask.objects.prefetch_related("assignees").select_related("created_by")
+        .annotate(task_count=Count("tasks", distinct=True))
+    )
+    rows = []
+    for r in rules:
+        start = today + timedelta(days=1) if r.last_run_on == today else today
+        rows.append({"rule": r, "next_run": r.next_run(start) if r.is_active else None})
+    return render(request, "tasks/recurring.html", {
+        "form": form,
+        "rows": rows,
+        "editing": editing,
+        "today": today,
+        "mention_people": _mention_people(),
+    })
+
+
+@admin_required
+@require_POST
+def recurring_toggle(request, pk):
+    rule = get_object_or_404(RecurringTask, pk=pk)
+    rule.is_active = not rule.is_active
+    rule.save(update_fields=["is_active"])
+    messages.success(request, f'{"Resumed" if rule.is_active else "Paused"} "{rule.title}".')
+    return redirect("recurring")
+
+
+@admin_required
+@require_POST
+def recurring_delete(request, pk):
+    rule = get_object_or_404(RecurringTask, pk=pk)
+    title = rule.title
+    rule.delete()
+    messages.success(request, f'Deleted the schedule "{title}". Tasks it already created are kept.')
+    return redirect("recurring")

@@ -52,6 +52,25 @@
         </td></tr>
         {% endif %}
 
+        {# List of tasks (overdue summary) #}
+        {% if task_list %}
+        <tr><td style="padding:18px 28px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e3e0d8;border-radius:12px;border-collapse:separate;">
+            {% for t in task_list %}
+            <tr>
+              <td style="padding:12px 14px;vertical-align:top;{% if not forloop.last %}border-bottom:1px solid #eeece6;{% endif %}">
+                <a href="{{ t.url }}" style="font-size:15px;font-weight:700;color:#1c1b19;text-decoration:none;">{{ t.title }}</a>
+                <div style="margin-top:3px;font-size:13px;color:#6b675f;">{{ t.who }} · Due {{ t.due }} · {{ t.status }}</div>
+              </td>
+              <td align="right" style="padding:12px 14px;vertical-align:top;white-space:nowrap;{% if not forloop.last %}border-bottom:1px solid #eeece6;{% endif %}">
+                <span style="display:inline-block;padding:3px 9px;border-radius:99px;background:#fdeeee;color:#d93d42;font-size:12px;font-weight:700;">{{ t.late }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </table>
+        </td></tr>
+        {% endif %}
+
         {# Brief / note #}
         {% for n in notes %}
         <tr><td style="padding:16px 28px 0;">

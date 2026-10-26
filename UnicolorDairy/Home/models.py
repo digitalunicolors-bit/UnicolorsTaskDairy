@@ -1,4 +1,6 @@
+import calendar
 import re
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
@@ -105,10 +107,22 @@ class Task(models.Model):
     watchers = models.ManyToManyField(
         settings.AUTH_USER_MODEL, blank=True, related_name="watched_tasks", help_text="People tagged on this task"
     )
+    recurring = models.ForeignKey(
+        "RecurringTask", on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks",
+        help_text="The repeating schedule that created this task",
+    )
+    occurrence_date = models.DateField(null=True, blank=True, help_text="Which day of the schedule this task is for")
 
     class Meta:
         ordering = ["due_date", "created_at"]
         indexes = [models.Index(fields=["assignee", "due_date"], name="task_assignee_due_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recurring", "occurrence_date", "assignee"],
+                condition=models.Q(recurring__isnull=False),
+                name="unique_recurring_occurrence",
+            )
+        ]
 
     def __str__(self):
         return self.title
@@ -208,11 +222,12 @@ class Notification(models.Model):
         COMMENTED = "commented", "Commented"
         MENTIONED = "mentioned", "Mentioned"
         REMINDER = "reminder", "Reminder"
+        OVERDUE = "overdue", "Overdue"
 
     ICONS = {
         "assigned": "📌", "started": "▶️", "submitted": "📤", "approved": "✅",
         "changes": "✏️", "reopened": "↩️", "deleted": "🗑️",
-        "commented": "💬", "mentioned": "@", "reminder": "⏰",
+        "commented": "💬", "mentioned": "@", "reminder": "⏰", "overdue": "⚠️",
     }
 
     # (message for the person the task belongs to, message for everyone else)
@@ -298,6 +313,7 @@ class TaskReminder(models.Model):
         WEEK = "week", "7 days before"
         DAY = "day", "1 day before"
         DUE = "due", "On the due date"
+        OVERDUE = "overdue", "Overdue alert to admins"
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="reminders")
     kind = models.CharField(max_length=8, choices=Kind.choices)
@@ -310,3 +326,87 @@ class TaskReminder(models.Model):
 
     def __str__(self):
         return f"{self.task} – {self.get_kind_display()}"
+
+
+def _ordinal(n):
+    return f"{n}{'th' if 11 <= n % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+class RecurringTask(models.Model):
+    """A task that is created automatically on a schedule, e.g. "Instagram post every Monday"."""
+
+    class Frequency(models.TextChoices):
+        DAILY = "daily", "Every day"
+        WEEKDAYS = "weekdays", "Every weekday (Mon–Fri)"
+        WEEKLY = "weekly", "Every week, on chosen days"
+        MONTHLY = "monthly", "Every month"
+
+    WEEKDAY_CHOICES = [("0", "Mon"), ("1", "Tue"), ("2", "Wed"), ("3", "Thu"), ("4", "Fri"), ("5", "Sat"), ("6", "Sun")]
+
+    title = models.CharField(max_length=200)
+    details = models.TextField(blank=True)
+    priority = models.CharField(max_length=10, choices=Task.Priority.choices, default=Task.Priority.MEDIUM)
+    assignees = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="recurring_tasks")
+    frequency = models.CharField(max_length=10, choices=Frequency.choices, default=Frequency.WEEKLY)
+    weekdays = models.CharField(max_length=20, blank=True, help_text="For weekly: days as numbers, Mon=0 … Sun=6")
+    day_of_month = models.PositiveSmallIntegerField(default=1, help_text="For monthly: 1–31")
+    due_in_days = models.PositiveSmallIntegerField(default=0, help_text="0 = due the same day it is created")
+    start_date = models.DateField(default=timezone.localdate)
+    end_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_run_on = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-is_active", "title"]
+
+    def __str__(self):
+        return f"{self.title} ({self.schedule_label})"
+
+    @property
+    def weekday_list(self):
+        return [int(x) for x in self.weekdays.split(",") if x.strip().isdigit()]
+
+    def runs_on(self, day):
+        if day < self.start_date or (self.end_date and day > self.end_date):
+            return False
+        if self.frequency == self.Frequency.DAILY:
+            return True
+        if self.frequency == self.Frequency.WEEKDAYS:
+            return day.weekday() < 5
+        if self.frequency == self.Frequency.WEEKLY:
+            return day.weekday() in self.weekday_list
+        if self.frequency == self.Frequency.MONTHLY:
+            last = calendar.monthrange(day.year, day.month)[1]
+            return day.day == min(self.day_of_month, last)
+        return False
+
+    def next_run(self, after=None):
+        """The next day (from `after`, inclusive) a task will be created, or None."""
+        day = max(after or timezone.localdate(), self.start_date)
+        for _ in range(400):
+            if self.end_date and day > self.end_date:
+                return None
+            if self.runs_on(day):
+                return day
+            day += timedelta(days=1)
+        return None
+
+    @property
+    def schedule_label(self):
+        if self.frequency == self.Frequency.WEEKLY:
+            names = dict(self.WEEKDAY_CHOICES)
+            days = [names[str(d)] for d in sorted(self.weekday_list)]
+            return "Every " + ", ".join(days) if days else "Weekly (no days picked)"
+        if self.frequency == self.Frequency.MONTHLY:
+            return f"Every month on the {_ordinal(self.day_of_month)}"
+        return self.get_frequency_display()
+
+    @property
+    def due_label(self):
+        if self.due_in_days == 0:
+            return "Due the same day"
+        if self.due_in_days == 1:
+            return "Due the next day"
+        return f"Due {self.due_in_days} days later"

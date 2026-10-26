@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="get" action="{% url 'search' %}" class="search-page" role="search">
+  <div class="search-bar big">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search task titles, briefs, notes and comments…" autofocus aria-label="Search">
+  </div>
+  <select name="status" aria-label="Status" onchange="this.form.submit()">
+    <option value="all" {% if status == 'all' %}selected{% endif %}>All tasks</option>
+    <option value="open" {% if status == 'open' %}selected{% endif %}>Not done yet</option>
+    <option value="done" {% if status == 'done' %}selected{% endif %}>Done</option>
+  </select>
+  <button class="primary" type="submit">Search</button>
+</form>
+
+{% if q %}
+  <p class="muted small search-count">
+    {{ results|length }} result{{ results|length|pluralize }} for “<b>{{ q }}</b>”{% if results|length == 100 %} · showing the first 100{% endif %}
+  </p>
+  <div class="panel search-results">
+    {% for r in results %}
+      <div class="result" data-open-task="{{ r.task.pk }}" tabindex="0" role="button" aria-label="Open {{ r.task.title }}">
+        <div class="result-head">
+          <span class="st s-{{ r.task.status }}">{{ r.task.get_status_display }}</span>
+          <span class="result-title">{{ r.title }}</span>
+        </div>
+        <div class="meta">
+          <span class="pill p-{{ r.task.priority }}">{{ r.task.get_priority_display }}</span>
+          <span class="pill {% if r.task.is_late %}late{% endif %}">{% if r.task.is_late %}Overdue · {% else %}Due {% endif %}{{ r.task.due_date|date:"j M Y" }}</span>
+          <span class="pill who">{{ r.task.assignee.display_name }}</span>
+          {% if r.task.comment_count %}<span class="pill">💬 {{ r.task.comment_count }}</span>{% endif %}
+          {% if r.task.recurring_id %}<span class="pill">↻ Repeats</span>{% endif %}
+        </div>
+        {% if r.snippet %}<div class="result-snippet"><b>{{ r.where }}:</b> {{ r.snippet }}</div>{% endif %}
+      </div>
+    {% empty %}
+      <div class="empty">No tasks match “{{ q }}”. Try a shorter word, or a client name.</div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="panel"><div class="empty">Type a word above — a task name, client, file link or something someone wrote in a comment.</div></div>
+{% endif %}
+
+{% include "tasks/_task_modal.html" %}
+{% endblock %}

@@ -21,6 +21,7 @@
     <span class="pill {% if t.is_late %}late{% endif %}">{% if t.is_late %}Overdue · {% else %}Due {% endif %}{{ t.due_date|date:"j M" }}</span>
     {% if show_member %}<span class="pill who">{{ t.assignee.display_name }}</span>{% endif %}
     {% if t.comment_count %}<span class="pill" title="Comments">💬 {{ t.comment_count }}</span>{% endif %}
+    {% if t.recurring_id %}<span class="pill" title="Created by a recurring schedule">↻ Repeats</span>{% endif %}
   </div>
   <div class="times">
     {% if t.submitted_at %}Submitted {{ t.submitted_at|date:"j M, g:i A" }}{% endif %}

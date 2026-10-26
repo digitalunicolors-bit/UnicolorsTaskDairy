@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel" id="recurringForm">
+  <div class="row-between">
+    <h2>{% if editing %}Edit recurring task{% else %}New recurring task{% endif %} <small>created automatically on a schedule</small></h2>
+    <a class="btn sm" href="{% url 'dashboard' %}">← Dashboard</a>
+  </div>
+
+  {% if form.errors %}
+    <div class="banner error">
+      {% for e in form.non_field_errors %}{{ e }}<br>{% endfor %}
+      {% for f in form %}{% for e in f.errors %}{{ f.label }}: {{ e }}<br>{% endfor %}{% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="post" class="form-grid recurring-form" action="{% if editing %}{% url 'recurring_edit' editing.pk %}{% else %}{% url 'recurring' %}{% endif %}">
+    {% csrf_token %}
+    <label class="t">Task{{ form.title }}</label>
+    <label>Priority{{ form.priority }}</label>
+    <label>Repeats{{ form.frequency }}</label>
+
+    <div class="full fl" data-show-for="weekly">On these days
+      <div class="chips">
+        {% for cb in form.weekday_choices %}<label class="chip">{{ cb.tag }}{{ cb.choice_label }}</label>{% endfor %}
+      </div>
+    </div>
+    <label data-show-for="monthly">Day of the month{{ form.day_of_month }}<span class="muted small">Short months use their last day.</span></label>
+
+    <label>Due{{ form.due_in_days }}<span class="muted small">Days after it's created · 0 = same day</span></label>
+    <label>Starts on{{ form.start_date }}</label>
+    <label>Ends on (optional){{ form.end_date }}</label>
+
+    <div class="full fl">Assign to <span class="muted small">(each person gets their own task)</span>
+      <div class="chips">
+        {% for cb in form.assignees %}
+          <label class="chip">{{ cb.tag }}<span class="avatar xs">{{ cb.choice_label|slice:":1"|upper }}</span>{{ cb.choice_label }}</label>
+        {% empty %}<span class="muted">No people yet — add them in the Team tab.</span>{% endfor %}
+      </div>
+    </div>
+
+    <label class="full">Details (optional · type @ to tag someone){{ form.details }}</label>
+
+    <div class="full row">
+      <button class="primary" type="submit">{% if editing %}Save changes{% else %}Create recurring task{% endif %}</button>
+      {% if editing %}<a class="btn" href="{% url 'recurring' %}">Cancel</a>{% endif %}
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Recurring tasks <small>{{ rows|length }} schedule{{ rows|length|pluralize }}</small></h2>
+  {% for row in rows %}{% with r=row.rule %}
+    <div class="rec-row {% if not r.is_active %}inactive{% endif %}">
+      <span class="rec-ico" aria-hidden="true">↻</span>
+      <div class="grow">
+        <div class="rec-title">
+          <b>{{ r.title }}</b>
+          <span class="pill p-{{ r.priority }}">{{ r.get_priority_display }}</span>
+          {% if r.is_active %}<span class="rec-status on">Active</span>{% else %}<span class="rec-status">Paused</span>{% endif %}
+        </div>
+        <div class="muted small">
+          {{ r.schedule_label }} · {{ r.due_label }} ·
+          {% for p in r.assignees.all %}{{ p.display_name }}{% if not forloop.last %}, {% endif %}{% empty %}nobody{% endfor %}
+        </div>
+        <div class="muted small">
+          {% if row.next_run %}Next: <b>{{ row.next_run|date:"D, j M Y" }}</b>{% elif r.is_active %}No more dates (schedule ended){% else %}Paused — no new tasks will be created{% endif %}
+          · {{ r.task_count }} task{{ r.task_count|pluralize }} created so far
+          {% if r.end_date %} · ends {{ r.end_date|date:"j M Y" }}{% endif %}
+        </div>
+      </div>
+      <div class="actions">
+        <a class="btn sm" href="{% url 'recurring_edit' r.pk %}#recurringForm">Edit</a>
+        <form method="post" action="{% url 'recurring_toggle' r.pk %}">{% csrf_token %}
+          <button class="sm">{% if r.is_active %}Pause{% else %}Resume{% endif %}</button>
+        </form>
+        <details class="inline">
+          <summary class="btn sm danger">Delete</summary>
+          <form method="post" action="{% url 'recurring_delete' r.pk %}">{% csrf_token %}
+            <span class="small">Stop this schedule? Tasks already created stay.</span>
+            <button class="sm danger">Yes, delete</button>
+          </form>
+        </details>
+      </div>
+    </div>
+  {% endwith %}{% empty %}
+    <div class="empty">No recurring tasks yet. Create one above — e.g. “Peanutji Instagram post”, every Monday.</div>
+  {% endfor %}
+</div>
+{{ mention_people|json_script:"assign-people" }}
+{% endblock %}
+
+{% block scripts %}{% load static %}
+<script src="{% static 'js/mentions.js' %}"></script>
+<script>
+(function () {
+  // Show "On these days" only for weekly, "Day of the month" only for monthly.
+  const freq = document.getElementById("id_frequency");
+  function sync() {
+    document.querySelectorAll("[data-show-for]").forEach(el => {
+      el.hidden = el.dataset.showFor !== freq.value;
+    });
+  }
+  if (freq) { freq.addEventListener("change", sync); sync(); }
+  if (window.Mentions) Mentions.attach(document.getElementById("id_details"), Mentions.readPeople("assign-people"));
+})();
+</script>
+{% endblock %}

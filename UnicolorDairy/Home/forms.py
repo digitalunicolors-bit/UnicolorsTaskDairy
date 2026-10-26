@@ -3,7 +3,7 @@ from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
-from .models import Task, User
+from .models import RecurringTask, Task, User
 
 
 class AssigneeChoiceField(forms.ModelMultipleChoiceField):
@@ -155,3 +155,64 @@ class AcceptInviteForm(forms.Form):
                 validate_password(password1)
 
         return cleaned
+
+class RecurringTaskForm(forms.ModelForm):
+    assignees = AssigneeChoiceField(
+        queryset=User.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        error_messages={"required": "Pick at least one person."},
+    )
+    weekday_choices = forms.MultipleChoiceField(
+        choices=RecurringTask.WEEKDAY_CHOICES, required=False, widget=forms.CheckboxSelectMultiple, label="On these days"
+    )
+
+    class Meta:
+        model = RecurringTask
+        fields = ["title", "priority", "frequency", "day_of_month", "due_in_days", "start_date", "end_date", "assignees", "details"]
+        widgets = {
+            "title": forms.TextInput(attrs={"placeholder": "e.g. Peanutji Instagram post"}),
+            "details": forms.Textarea(attrs={"rows": 3, "placeholder": "Brief, references, file links…"}),
+            "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "end_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "day_of_month": forms.NumberInput(attrs={"min": 1, "max": 31}),
+            "due_in_days": forms.NumberInput(attrs={"min": 0, "max": 60}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["assignees"].queryset = User.objects.filter(is_active=True)
+        self.fields["end_date"].required = False
+        if self.instance.pk:
+            self.initial["weekday_choices"] = [str(d) for d in self.instance.weekday_list]
+        elif not self.is_bound:
+            self.initial.setdefault("start_date", timezone.localdate())
+
+    def clean_day_of_month(self):
+        d = self.cleaned_data.get("day_of_month") or 1
+        if not 1 <= d <= 31:
+            raise forms.ValidationError("Pick a day between 1 and 31.")
+        return d
+
+    def clean_due_in_days(self):
+        d = self.cleaned_data.get("due_in_days") or 0
+        if d > 60:
+            raise forms.ValidationError("Due date can be at most 60 days after the task is created.")
+        return d
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("frequency") == RecurringTask.Frequency.WEEKLY and not cleaned.get("weekday_choices"):
+            self.add_error("weekday_choices", "Pick at least one day of the week.")
+        start, end = cleaned.get("start_date"), cleaned.get("end_date")
+        if start and end and end < start:
+            self.add_error("end_date", "The end date can't be before the start date.")
+        return cleaned
+
+    def save(self, commit=True):
+        rule = super().save(commit=False)
+        days = self.cleaned_data.get("weekday_choices") or []
+        rule.weekdays = ",".join(sorted(days)) if rule.frequency == RecurringTask.Frequency.WEEKLY else ""
+        if commit:
+            rule.save()
+            self.save_m2m()
+        return rule
