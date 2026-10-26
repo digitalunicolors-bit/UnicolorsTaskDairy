@@ -207,11 +207,12 @@ class Notification(models.Model):
         DELETED = "deleted", "Deleted"
         COMMENTED = "commented", "Commented"
         MENTIONED = "mentioned", "Mentioned"
+        REMINDER = "reminder", "Reminder"
 
     ICONS = {
         "assigned": "📌", "started": "▶️", "submitted": "📤", "approved": "✅",
         "changes": "✏️", "reopened": "↩️", "deleted": "🗑️",
-        "commented": "💬", "mentioned": "@",
+        "commented": "💬", "mentioned": "@", "reminder": "⏰",
     }
 
     # (message for the person the task belongs to, message for everyone else)
@@ -289,3 +290,23 @@ class TaskComment(models.Model):
 
     def __str__(self):
         return f"{self.author}: {self.body[:40]}"
+
+class TaskReminder(models.Model):
+    """Records each due-date reminder email, so it is only ever sent once."""
+
+    class Kind(models.TextChoices):
+        WEEK = "week", "7 days before"
+        DAY = "day", "1 day before"
+        DUE = "due", "On the due date"
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="reminders")
+    kind = models.CharField(max_length=8, choices=Kind.choices)
+    due_date = models.DateField(help_text="The due date this reminder was for")
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-sent_at"]
+        constraints = [models.UniqueConstraint(fields=["task", "kind", "due_date"], name="unique_task_reminder")]
+
+    def __str__(self):
+        return f"{self.task} – {self.get_kind_display()}"

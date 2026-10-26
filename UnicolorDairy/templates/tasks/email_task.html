@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f2ee;-webkit-font-smoothing:antialiased;">
+  {# Hidden preview line shown in the inbox list #}
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">{{ preheader }}</div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f2ee;">
+    <tr><td align="center" style="padding:28px 12px;">
+
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e3e0d8;font-family:Arial,Helvetica,sans-serif;color:#1c1b19;">
+
+        {# Rainbow strip + brand #}
+        <tr><td style="height:5px;line-height:5px;font-size:0;background:#e5484d;background-image:linear-gradient(90deg,#e5484d,#f59e0b,#eab308,#2a9d5c,#2f6fde,#8b5cf6,#d6409f);">&nbsp;</td></tr>
+        <tr><td style="padding:22px 28px 0;">
+          <span style="font-size:18px;font-weight:800;color:#e5484d;">Unicolors</span>
+          <span style="font-size:18px;font-weight:800;color:#1c1b19;"> Daily Tasks</span>
+        </td></tr>
+
+        {# Status banner #}
+        <tr><td style="padding:18px 28px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{{ badge.bg }};border-radius:12px;">
+            <tr><td style="padding:16px 18px;">
+              <span style="display:inline-block;padding:4px 10px;border-radius:99px;background:{{ badge.color }};color:#ffffff;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">{{ badge.icon }} {{ badge.label }}</span>
+              <div style="margin-top:10px;font-size:21px;line-height:1.3;font-weight:800;color:#1c1b19;">{{ heading }}</div>
+            </td></tr>
+          </table>
+        </td></tr>
+
+        {# Greeting + intro #}
+        <tr><td style="padding:20px 28px 0;font-size:15px;line-height:1.6;color:#3d3b37;">
+          <p style="margin:0 0 8px;">Hi {{ greeting_name }},</p>
+          <p style="margin:0;">{{ intro }}</p>
+        </td></tr>
+
+        {# Details table #}
+        {% if rows %}
+        <tr><td style="padding:18px 28px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e3e0d8;border-radius:12px;border-collapse:separate;">
+            {% for r in rows %}
+            <tr>
+              <td style="padding:11px 14px;width:34%;font-size:12px;font-weight:700;color:#6b675f;text-transform:uppercase;letter-spacing:.04em;vertical-align:top;{% if not forloop.last %}border-bottom:1px solid #eeece6;{% endif %}">{{ r.label }}</td>
+              <td style="padding:11px 14px;font-size:14px;font-weight:{% if r.bold %}700{% else %}600{% endif %};color:{{ r.color|default:'#1c1b19' }};vertical-align:top;{% if not forloop.last %}border-bottom:1px solid #eeece6;{% endif %}">{{ r.value }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </td></tr>
+        {% endif %}
+
+        {# Brief / note #}
+        {% for n in notes %}
+        <tr><td style="padding:16px 28px 0;">
+          <div style="font-size:12px;font-weight:700;color:#6b675f;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">{{ n.label }}</div>
+          <div style="border-left:4px solid {{ n.color }};background:#f6f5f2;border-radius:0 10px 10px 0;padding:12px 14px;font-size:14px;line-height:1.6;color:#1c1b19;white-space:pre-wrap;word-break:break-word;">{{ n.text }}</div>
+        </td></tr>
+        {% endfor %}
+
+        {# Button #}
+        {% if button %}
+        <tr><td style="padding:24px 28px 4px;">
+          <a href="{{ button.url }}" style="display:inline-block;background:{{ button.color|default:'#e5484d' }};color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 26px;border-radius:10px;">{{ button.label }} &rarr;</a>
+        </td></tr>
+        <tr><td style="padding:8px 28px 0;font-size:12px;color:#8a867d;line-height:1.5;">
+          Button not working? Copy this link into your browser:<br>
+          <a href="{{ button.url }}" style="color:#2f6fde;word-break:break-all;">{{ button.url }}</a>
+        </td></tr>
+        {% endif %}
+
+        {# Footer #}
+        <tr><td style="padding:24px 28px 26px;">
+          <div style="border-top:1px solid #eeece6;padding-top:14px;font-size:12px;line-height:1.6;color:#8a867d;">
+            {% if footer %}{{ footer }}<br>{% endif %}
+            Sent by Unicolors Daily Tasks · <a href="{{ site_url }}" style="color:#8a867d;">{{ site_host }}</a>
+          </div>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
