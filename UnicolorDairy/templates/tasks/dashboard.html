@@ -7,13 +7,25 @@
     <label class="t">Task{{ form.title }}</label>
     <label>Priority{{ form.priority }}</label>
     <label>Due date{{ form.due_date }}</label>
-    <div class="full fl">Assign to (pick one or more)
-      <div class="chips">
-        {% for cb in form.assignees %}
-          <label class="chip">{{ cb.tag }}<span class="avatar xs">{{ cb.choice_label|slice:":1"|upper }}</span>{{ cb.choice_label }}</label>
-        {% empty %}<span class="muted">No people yet — add them in the Team tab.</span>{% endfor %}
+
+    <div class="full fl">Assign to (type a name)
+      <div class="picker" id="assignPicker">
+        <div class="picker-box">
+          <div class="picker-selected" data-selected></div>
+          <input type="text" class="picker-input" placeholder="Type a name…" autocomplete="off" data-search>
+        </div>
+        <div class="picker-list" data-list hidden></div>
+
+        {# Real checkboxes – hidden, but still submitted with the form #}
+        <div hidden>
+          {% for cb in form.assignees %}
+            <span data-person data-label="{{ cb.choice_label }}">{{ cb.tag }}</span>
+          {% empty %}{% endfor %}
+        </div>
       </div>
+      {% if not form.assignees %}<span class="muted">No people yet — add them in the Team tab.</span>{% endif %}
     </div>
+
     <label class="full">Details (optional){{ form.details }}</label>
     <div class="full brief-extras">
       <label class="fl">Attachments (optional · up to 10 files, max {{ max_upload_mb }} MB each)
@@ -33,15 +45,22 @@
   </form>
 </div>
 
-<form method="get" class="controls">
-  <label class="inline">Date<input type="date" name="date" value="{{ day|date:'Y-m-d' }}" onchange="this.form.submit()"></label>
+<form method="get" class="controls" id="filters">
   <label class="inline">Show
     <select name="show" onchange="this.form.submit()">
-      <option value="day" {% if show == 'day' %}selected{% endif %}>This day</option>
-      <option value="open" {% if show == 'open' %}selected{% endif %}>All open tasks</option>
+      <option value="today" {% if show == 'today' %}selected{% endif %}>Today</option>
+      <option value="week" {% if show == 'week' %}selected{% endif %}>Last 7 days</option>
       <option value="month" {% if show == 'month' %}selected{% endif %}>Whole month</option>
+      <option value="custom" {% if show == 'custom' %}selected{% endif %}>Custom dates</option>
     </select>
   </label>
+
+  <input type="hidden" name="mode" value="{{ mode }}">
+  <label class="inline">Date<input type="date" name="date" value="{% if mode == 'single' %}{{ day|date:'Y-m-d' }}{% endif %}" data-single></label>
+  <span class="or">or</span>
+  <label class="inline">From<input type="date" name="start" value="{% if mode == 'range' %}{{ start|date:'Y-m-d' }}{% endif %}" data-range></label>
+  <label class="inline">To<input type="date" name="end" value="{% if mode == 'range' %}{{ end|date:'Y-m-d' }}{% endif %}" data-range></label>
+
   <label class="inline">Member
     <select name="member" onchange="this.form.submit()">
       <option value="all">Everyone</option>
@@ -50,7 +69,122 @@
   </label>
   <noscript><button class="sm">Apply</button></noscript>
 </form>
+<p class="muted small" style="margin:-4px 0 12px">
+  {% if mode == 'range' %}Showing tasks due from <b>{{ start|date:"d M Y" }}</b> to <b>{{ end|date:"d M Y" }}</b>
+  {% else %}Showing tasks for <b>{{ day|date:"d M Y" }}</b>{% endif %}
+</p>
 
 {% include "tasks/_board.html" with admin_view=True show_member=True %}
 {% endblock %}
-{% block scripts %}{% load static %}<script src="{% static 'js/voice.js' %}"></script>{% endblock %}
+
+{% block scripts %}{% load static %}
+<script src="{% static 'js/voice.js' %}"></script>
+<script>
+// Picking a single date, or both From and To, switches "Show" to "Custom dates".
+(function () {
+  const f = document.getElementById("filters");
+  if (!f) return;
+  f.querySelector("[data-single]").addEventListener("change", e => {
+    if (!e.target.value) return;
+    f.start.value = f.end.value = "";
+    f.mode.value = "single";
+    f.show.value = "custom";
+    f.submit();
+  });
+  f.querySelectorAll("[data-range]").forEach(el => el.addEventListener("change", () => {
+    f.end.min = f.start.value;
+    if (!f.start.value) { f.start.focus(); return; }   // wait until both dates are picked
+    if (!f.end.value) { f.end.focus(); return; }
+    f.date.value = "";
+    f.mode.value = "range";
+    f.show.value = "custom";
+    f.submit();
+  }));
+})();
+</script>
+<script>
+(function () {
+  const root = document.getElementById("assignPicker");
+  if (!root) return;
+  const input = root.querySelector("[data-search]");
+  const list = root.querySelector("[data-list]");
+  const selectedBox = root.querySelector("[data-selected]");
+  const people = [...root.querySelectorAll("[data-person]")].map(el => ({
+    name: el.dataset.label,
+    box: el.querySelector("input[type=checkbox]"),
+  }));
+  let active = 0, matches = [];
+
+  const initial = n => (n.trim().charAt(0) || "?").toUpperCase();
+
+  function personRow(p, cls) {
+    const el = document.createElement(cls === "picker-chip" ? "span" : "div");
+    el.className = cls;
+    const av = document.createElement("span");
+    av.className = "avatar xs";
+    av.textContent = initial(p.name);
+    const nm = document.createElement("span");
+    nm.textContent = p.name;
+    el.append(av, nm);
+    return el;
+  }
+
+  function renderSelected() {
+    selectedBox.innerHTML = "";
+    people.filter(p => p.box.checked).forEach(p => {
+      const chip = personRow(p, "picker-chip");
+      const x = document.createElement("button");
+      x.type = "button";
+      x.textContent = "×";
+      x.setAttribute("aria-label", "Remove " + p.name);
+      x.onclick = e => { e.stopPropagation(); p.box.checked = false; renderSelected(); renderList(); input.focus(); };
+      chip.append(x);
+      selectedBox.append(chip);
+    });
+  }
+
+  function renderList() {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { list.hidden = true; return; }          // show names only while typing
+    matches = people.filter(p => !p.box.checked && p.name.toLowerCase().includes(q));
+    list.innerHTML = "";
+    if (!matches.length) {
+      list.innerHTML = '<div class="picker-empty">No one found</div>';
+    } else {
+      active = Math.min(active, matches.length - 1);
+      matches.forEach((p, i) => {
+        const item = personRow(p, "picker-item" + (i === active ? " on" : ""));
+        item.onmousedown = e => { e.preventDefault(); pick(p); };
+        list.append(item);
+      });
+    }
+    list.hidden = false;
+  }
+
+  function pick(p) {
+    p.box.checked = true;
+    input.value = "";
+    active = 0;
+    renderSelected();
+    renderList();
+    input.focus();
+  }
+
+  input.addEventListener("input", () => { active = 0; renderList(); });
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown" && matches.length) { e.preventDefault(); active = (active + 1) % matches.length; renderList(); }
+    else if (e.key === "ArrowUp" && matches.length) { e.preventDefault(); active = (active - 1 + matches.length) % matches.length; renderList(); }
+    else if (e.key === "Enter") { e.preventDefault(); if (!list.hidden && matches[active]) pick(matches[active]); }
+    else if (e.key === "Escape") { list.hidden = true; }
+    else if (e.key === "Backspace" && !input.value) {
+      const last = people.filter(p => p.box.checked).pop();
+      if (last) { last.box.checked = false; renderSelected(); }
+    }
+  });
+  input.addEventListener("blur", () => setTimeout(() => { list.hidden = true; }, 120));
+  root.querySelector(".picker-box").addEventListener("click", () => input.focus());
+
+  renderSelected();
+})();
+</script>
+{% endblock %}

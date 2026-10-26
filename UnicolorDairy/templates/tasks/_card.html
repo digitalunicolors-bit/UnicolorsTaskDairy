@@ -1,5 +1,5 @@
 {# Expects: t (task), admin_view (bool), show_member (bool) #}
-<div class="card">
+<div class="card" data-id="{{ t.pk }}" data-status="{{ t.status }}" data-owner="{% if t.assignee_id == user.id %}1{% endif %}">
   <h3>{{ t.title }}</h3>
   {% if t.details %}<p>{{ t.details|urlize }}</p>{% endif %}
   {% with atts=t.attachments.all %}{% if atts %}

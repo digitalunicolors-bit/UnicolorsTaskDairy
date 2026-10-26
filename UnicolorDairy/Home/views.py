@@ -90,33 +90,55 @@ def home(request):
 @admin_required
 def dashboard(request):
     today = timezone.localdate()
-    day = _parse_date(request.GET.get("date"), today)
-    show = request.GET.get("show", "day")
+    show = request.GET.get("show", "today")
+    mode = request.GET.get("mode", "single")
     member_id = request.GET.get("member", "all")
+    day = _parse_date(request.GET.get("date"), today)
+
+    # Work out which dates to show
+    if show == "week":
+        start, end, mode = today - timedelta(days=6), today, "range"
+    elif show == "month":
+        first = today.replace(day=1)
+        next_month = (first + timedelta(days=32)).replace(day=1)
+        start, end, mode = first, next_month - timedelta(days=1), "range"
+    elif show == "custom":
+        if mode == "range":
+            start = _parse_date(request.GET.get("start"), today.replace(day=1))
+            end = _parse_date(request.GET.get("end"), today)
+            if end < start:
+                start, end = end, start
+        else:
+            mode = "single"
+            start = end = day
+    else:
+        show, mode = "today", "single"
+        start = end = today
 
     qs = Task.objects.select_related("assignee").prefetch_related("attachments")
     if member_id != "all":
         qs = qs.filter(assignee_id=member_id)
 
-    if show == "open":
-        qs = qs.exclude(status=S.DONE)
-    elif show == "month":
-        qs = qs.filter(due_date__year=day.year, due_date__month=day.month)
-    else:
-        show = "day"
-        tasks = list(qs.exclude(status=S.DONE).filter(due_date__lte=day)) if day == today else []
-        tasks += list(qs.filter(due_date=day))
+    if mode == "single":
+        # One day: tasks due that day, plus anything waiting for approval.
+        # For today, also include older tasks that are still not done.
+        tasks = list(qs.exclude(status=S.DONE).filter(due_date__lt=start)) if start == today else []
+        tasks += list(qs.filter(due_date=start))
         tasks += list(qs.filter(status=S.REVIEW))
-        qs = list({t.id: t for t in tasks}.values())
+        tasks = list({t.id: t for t in tasks}.values())
+    else:
+        tasks = list(qs.filter(due_date__range=(start, end)))
 
-    tasks = list(qs)
     form = AssignTaskForm()
     return render(request, "tasks/dashboard.html", {
         "form": form,
         "board": _board(tasks),
         "stats": _stats(tasks),
-        "day": day,
         "show": show,
+        "mode": mode,
+        "day": start,
+        "start": start,
+        "end": end,
         "member_id": member_id,
         "members": User.objects.filter(is_active=True),
         "is_admin_view": True,

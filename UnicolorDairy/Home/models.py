@@ -162,3 +162,80 @@ class TaskActivity(models.Model):
 
     def __str__(self):
         return f"{self.actor} {self.get_action_display()} {self.task}"
+
+
+class Notification(models.Model):
+    """An in-app update shown under the bell icon."""
+
+    class Verb(models.TextChoices):
+        ASSIGNED = "assigned", "Assigned"
+        STARTED = "started", "Started"
+        SUBMITTED = "submitted", "Submitted"
+        APPROVED = "approved", "Approved"
+        CHANGES = "changes", "Changes requested"
+        REOPENED = "reopened", "Reopened"
+        DELETED = "deleted", "Deleted"
+
+    ICONS = {
+        "assigned": "📌", "started": "▶️", "submitted": "📤", "approved": "✅",
+        "changes": "✏️", "reopened": "↩️", "deleted": "🗑️",
+    }
+
+    # (message for the person the task belongs to, message for everyone else)
+    TEXTS = {
+        "assigned": ("{actor} assigned you “{title}”", "{actor} assigned “{title}” to {owner}"),
+        "started": ("{actor} started your task “{title}”", "{actor} started “{title}”{for_owner}"),
+        "submitted": ("{actor} submitted your task “{title}” for approval", "{actor} submitted “{title}”{for_owner} for approval"),
+        "approved": ("{actor} approved “{title}”", "{actor} approved “{title}”{for_owner}"),
+        "changes": ("{actor} requested changes on “{title}”", "{actor} requested changes on “{title}”{for_owner}"),
+        "reopened": ("{actor} reopened “{title}”", "{actor} reopened “{title}”{for_owner}"),
+        "deleted": ("{actor} deleted your task “{title}”", "{actor} deleted “{title}”{for_owner}"),
+    }
+
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    task = models.ForeignKey(Task, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    verb = models.CharField(max_length=12, choices=Verb.choices)
+    message = models.CharField(max_length=300)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["recipient", "is_read"], name="notif_recipient_read_idx")]
+
+    def __str__(self):
+        return self.message
+
+    @property
+    def icon(self):
+        return self.ICONS.get(self.verb, "🔔")
+
+    @classmethod
+    def send(cls, task, actor, verb, note="", recipients=None):
+        """Notify everyone who should know about a change.
+
+        By default: the person the task belongs to and every admin, except whoever made the change.
+        """
+        owner = task.assignee
+        if recipients is None:
+            admins = User.objects.filter(is_active=True).filter(models.Q(role=User.Role.ADMIN) | models.Q(is_superuser=True))
+            recipients = [owner, *admins]
+        mine, others = cls.TEXTS[verb]
+        values = {
+            "actor": actor.display_name,
+            "title": task.title,
+            "owner": owner.display_name,
+            "for_owner": "" if owner.pk == actor.pk else f" for {owner.display_name}",
+        }
+        note = (note or "").strip()
+        seen, items = set(), []
+        for person in recipients:
+            if not person or person.pk == actor.pk or person.pk in seen or not person.is_active:
+                continue
+            seen.add(person.pk)
+            text = (mine if person.pk == owner.pk else others).format(**values)
+            if note:
+                text += f": {note}"
+            items.append(cls(recipient=person, actor=actor, task=task, verb=verb, message=text[:300]))
+        cls.objects.bulk_create(items)

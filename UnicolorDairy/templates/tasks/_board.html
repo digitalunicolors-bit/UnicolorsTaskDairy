@@ -7,9 +7,9 @@
   <div class="stat"><small>Overdue</small><b class="{% if stats.late %}red{% endif %}">{{ stats.late }}</b></div>
   <div class="stat"><small>Completed</small><b>{{ stats.pct }}%</b><div class="progress"><i style="width:{{ stats.pct }}%"></i></div></div>
 </div>
-<div class="board">
+<div class="board" data-board data-admin="{% if admin_view %}1{% endif %}">
   {% for col in board %}
-  <div class="col">
+  <div class="col" data-status="{{ col.status }}">
     <div class="col-h"><span class="dot s-{{ col.status }}"></span>{{ col.label }}<span class="count">{{ col.tasks|length }}</span></div>
     {% for t in col.tasks %}
       {% include "tasks/_card.html" with t=t admin_view=admin_view show_member=show_member %}
@@ -19,3 +19,114 @@
   </div>
   {% endfor %}
 </div>
+
+{# Hidden form used when a card is dropped in a new column #}
+<form method="post" id="moveForm" data-url="{% url 'task_action' 0 'ACTION' %}" hidden>
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <input type="hidden" name="note" value="">
+</form>
+
+<script>
+(function () {
+  const board = document.querySelector("[data-board]");
+  const form = document.getElementById("moveForm");
+  if (!board || !form) return;
+  const isAdmin = board.dataset.admin === "1";
+  let dragged = null, toastTimer = null;
+
+  function toast(msg) {
+    let t = document.querySelector(".board-toast");
+    if (!t) { t = document.createElement("div"); t.className = "board-toast"; document.body.append(t); }
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+  }
+
+  // Which button action a drop means, or why it isn't allowed.
+  function check(card, to) {
+    const from = card.dataset.status;
+    const canWork = card.dataset.owner === "1" || isAdmin;
+    if (from === to) return {};
+    if (to === "todo") return { error: "Tasks can't be moved back to To Do." };
+    if (to === "progress") {
+      if (from !== "todo") return { error: "Only To Do tasks can be moved to In Progress." };
+      return canWork ? { action: "start" } : { error: "Only the person assigned can start this task." };
+    }
+    if (to === "review") {
+      if (!["todo", "progress", "change"].includes(from)) return { error: "This task can't be submitted from here." };
+      return canWork ? { action: "submit" } : { error: "Only the person assigned can submit this task." };
+    }
+    if (to === "done") {
+      if (!isAdmin) return { error: "Only an admin can approve tasks." };
+      if (from !== "review") return { error: "Submit the task for approval first." };
+      return { action: "approve" };
+    }
+    if (to === "change") {
+      if (!isAdmin) return { error: "Only an admin can request changes." };
+      if (!["review", "done"].includes(from)) return { error: "Only tasks waiting for approval or done can get change requests." };
+      return { action: "changes" };
+    }
+    return { error: "This card can't be moved there." };
+  }
+
+  function move(card, col) {
+    const r = check(card, col.dataset.status);
+    if (r.error) { toast(r.error); return; }
+    if (!r.action) return;
+
+    let note = "";
+    if (r.action === "submit") {
+      note = prompt("Optional note for the admin (what you did, file link…):", "");
+      if (note === null) return;                       // cancelled
+    } else if (r.action === "changes") {
+      note = prompt("What needs to change?", "");
+      if (note === null) return;
+      if (!note.trim()) { toast("Please write what needs to change."); return; }
+    }
+
+    col.querySelector(".empty")?.remove();
+    col.append(card);                                  // show it in the new column while saving
+    form.action = form.dataset.url.replace("/0/", "/" + card.dataset.id + "/").replace("ACTION", r.action);
+    form.note.value = note;
+    form.submit();
+  }
+
+  board.querySelectorAll(".card").forEach(card => {
+    card.draggable = true;
+    // Don't start a drag while typing in a box, clicking a button or using audio.
+    card.addEventListener("mousedown", e => {
+      card.draggable = !e.target.closest("input, textarea, button, select, audio, a, summary");
+    });
+    card.addEventListener("dragstart", e => {
+      dragged = card;
+      card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", card.dataset.id);
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      card.draggable = true;
+      dragged = null;
+      board.querySelectorAll(".drop-on").forEach(c => c.classList.remove("drop-on"));
+    });
+  });
+
+  board.querySelectorAll(".col").forEach(col => {
+    col.addEventListener("dragover", e => {
+      if (!dragged) return;
+      e.preventDefault();
+      col.classList.add("drop-on");
+    });
+    col.addEventListener("dragleave", e => {
+      if (!col.contains(e.relatedTarget)) col.classList.remove("drop-on");
+    });
+    col.addEventListener("drop", e => {
+      e.preventDefault();
+      col.classList.remove("drop-on");
+      if (dragged) move(dragged, col);
+    });
+  });
+})();
+</script>
