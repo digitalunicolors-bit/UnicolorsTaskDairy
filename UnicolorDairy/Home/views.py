@@ -388,49 +388,65 @@ def my_tasks(request):
 
 
 def _report_scope(request):
-    first = reports.parse_month(request.GET.get("month"))
+    """The period, member and tasks the report (and its CSV) covers."""
+    period = reports.parse_period(request.GET)
     member_id = request.GET.get("member", "all")
     if not request.user.is_admin:
         member_id = str(request.user.id)
     elif member_id != "all" and not member_id.isdigit():
         member_id = "all"
-    qs = Task.objects.filter(due_date__year=first.year, due_date__month=first.month).select_related(
-        "assignee", "approved_by"
-    )
+    qs = Task.objects.select_related("assignee", "approved_by")
     if member_id != "all":
         qs = qs.filter(assignee_id=member_id)
-    return first, member_id, list(qs)
+    tasks = list(qs.filter(due_date__range=(period["start"], period["end"])))
+    prev = list(qs.filter(due_date__range=(period["prev_start"], period["prev_end"])))
+    return period, member_id, tasks, prev
 
 
 @login_required
 def report(request):
-    first, member_id, tasks = _report_scope(request)
-    days = reports.month_days(first)
+    period, member_id, tasks, prev_tasks = _report_scope(request)
+    all_days = reports.days_between(period["start"], period["end"])
+    grid_days = all_days if len(all_days) <= reports.MAX_GRID_DAYS else []
     if member_id == "all":
         ids = {t.assignee_id for t in tasks}
         users = [u for u in User.objects.all() if u.is_active or u.id in ids]
     else:
         users = [get_object_or_404(User, pk=member_id)]
+    summary = reports.summarize(tasks)
+    prev = reports.summarize(prev_tasks)
     return render(request, "tasks/report.html", {
-        "month": first,
+        "period": period,
+        "month": period["month"],
         "member_id": member_id,
         "members": User.objects.all(),
-        "days": days,
-        "summary": reports.summarize(tasks),
-        "rows": reports.build_grid(users, tasks, days),
-        "log": reports.day_log(tasks, days),
+        "days": grid_days,
+        "summary": summary,
+        "prev": prev,
+        "deltas": {
+            "pct": reports.delta(summary.pct if summary.assigned else None, prev.pct if prev.assigned else None),
+            "on_time": reports.delta(summary.on_time_pct, prev.on_time_pct),
+            "first_pass": reports.delta(summary.first_pass_pct, prev.first_pass_pct),
+        },
+        "breakdown": reports.status_breakdown(tasks),
+        "daily": reports.daily_counts(tasks, grid_days) if grid_days else [],
+        "rows": reports.build_grid(users, tasks, grid_days),
+        "log": reports.day_log(tasks, all_days),
         "single": member_id != "all",
         "selected_user": users[0] if member_id != "all" else None,
+        "query": request.GET.urlencode(),
+        "max_grid_days": reports.MAX_GRID_DAYS,
     })
 
 
 @login_required
 def report_csv(request):
-    first, member_id, tasks = _report_scope(request)
+    period, member_id, tasks, _ = _report_scope(request)
     tasks.sort(key=lambda t: (t.due_date, t.assignee.display_name))
     suffix = "" if member_id == "all" else f"-{tasks[0].assignee.username}" if tasks else ""
     response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="unicolors-report-{first:%Y-%m}{suffix}.csv"'
+    name = f"unicolors-report-{period['start']:%Y-%m-%d}-to-{period['end']:%Y-%m-%d}{suffix}.csv"
+    response["Content-Disposition"] = f'attachment; filename="{name}"'
     return reports.write_csv(response, tasks)
 
 

@@ -1,0 +1,2 @@
+{# Small ▲ / ▼ change vs the previous period. Expects: d = {"value", "dir"} or None #}
+{% if d %}<span class="delta {{ d.dir }}" title="Change vs the previous period">{% if d.dir == "up" %}▲{% elif d.dir == "down" %}▼{% else %}●{% endif %} {{ d.value }} pts vs before</span>{% else %}<span class="delta none">no earlier data</span>{% endif %}

@@ -1,7 +1,33 @@
 {% extends "base.html" %}
 {% block content %}
-<form method="get" class="controls">
-  <label class="inline">Month<input type="month" name="month" value="{{ month|date:'Y-m' }}" onchange="this.form.submit()"></label>
+
+{# ---------- title + filters ---------- #}
+<div class="row-between rep-top">
+  <div>
+    <h2 class="rep-h">{% if single %}{{ selected_user.display_name }}'s report{% else %}Team report{% endif %}</h2>
+    <p class="muted small">{{ period.label }} · tasks counted by due date · compared with {{ period.prev_start|date:"j M" }} – {{ period.prev_end|date:"j M" }}</p>
+  </div>
+  <div class="row no-print">
+    <a class="btn" href="{% url 'report_csv' %}?{{ query }}">⬇ Download CSV (Excel)</a>
+    <button type="button" class="btn" onclick="window.print()">🖨 Print / Save PDF</button>
+  </div>
+</div>
+
+<form method="get" class="controls no-print" id="repFilters">
+  <label class="inline">Period
+    <select name="period" data-period>
+      <option value="month" {% if period.key == 'month' %}selected{% endif %}>Month</option>
+      <option value="last_month" {% if period.key == 'last_month' %}selected{% endif %}>Last month</option>
+      <option value="7d" {% if period.key == '7d' %}selected{% endif %}>Last 7 days</option>
+      <option value="30d" {% if period.key == '30d' %}selected{% endif %}>Last 30 days</option>
+      <option value="quarter" {% if period.key == 'quarter' %}selected{% endif %}>This quarter</option>
+      <option value="custom" {% if period.key == 'custom' %}selected{% endif %}>Custom range</option>
+    </select>
+  </label>
+  <label class="inline" data-show-period="month">Month<input type="month" name="month" value="{{ month|date:'Y-m' }}" onchange="this.form.submit()"></label>
+  <label class="inline" data-show-period="custom">From<input type="date" name="start" value="{{ period.start|date:'Y-m-d' }}"></label>
+  <label class="inline" data-show-period="custom">To<input type="date" name="end" value="{{ period.end|date:'Y-m-d' }}"></label>
+  <button class="sm" type="submit" data-show-period="custom">Apply</button>
   {% if user.is_admin %}
   <label class="inline">Member
     <select name="member" onchange="this.form.submit()">
@@ -10,39 +36,99 @@
     </select>
   </label>
   {% endif %}
-  <noscript><button class="sm">Apply</button></noscript>
-  <a class="btn" href="{% url 'report_csv' %}?month={{ month|date:'Y-m' }}&member={{ member_id }}">Download CSV (Excel)</a>
+  {% if period.key != 'month' or member_id != 'all' %}<a class="btn clear-btn" href="{% url 'report' %}">✕ Reset</a>{% endif %}
 </form>
 
-<div class="stats">
-  <div class="stat"><small>Assigned</small><b>{{ summary.assigned }}</b></div>
-  <div class="stat"><small>Completed</small><b>{{ summary.done }}</b></div>
-  <div class="stat"><small>On time</small><b>{{ summary.on_time }}</b></div>
-  <div class="stat"><small>Late / missed</small><b class="{% if summary.late %}red{% endif %}">{{ summary.late }}</b></div>
-  <div class="stat"><small>Change requests</small><b>{{ summary.changes }}</b></div>
-  <div class="stat"><small>Completion</small><b>{{ summary.pct }}%</b><div class="progress"><i style="width:{{ summary.pct }}%"></i></div></div>
+{# ---------- key numbers ---------- #}
+<div class="stats kpis">
+  <div class="stat"><small>Tasks</small><b>{{ summary.assigned }}</b>
+    <span class="kpi-sub">{{ summary.done }} done · {{ summary.open }} open</span></div>
+
+  <div class="stat"><small>Completion</small><b>{{ summary.pct }}%</b>
+    <div class="progress"><i style="width:{{ summary.pct }}%"></i></div>
+    {% include "tasks/_delta.html" with d=deltas.pct %}</div>
+
+  <div class="stat"><small>On time</small><b>{{ summary.on_time_pct|default_if_none:"—" }}{% if summary.on_time_pct is not None %}%{% endif %}</b>
+    <span class="kpi-sub">{{ summary.on_time }} of {{ summary.done }} done on time</span>
+    {% include "tasks/_delta.html" with d=deltas.on_time %}</div>
+
+  <div class="stat"><small>Approved first time</small><b>{{ summary.first_pass_pct|default_if_none:"—" }}{% if summary.first_pass_pct is not None %}%{% endif %}</b>
+    <span class="kpi-sub">no changes needed</span>
+    {% include "tasks/_delta.html" with d=deltas.first_pass %}</div>
+
+  <div class="stat"><small>Avg. turnaround</small><b>{{ summary.turnaround_label|default:"—" }}</b>
+    <span class="kpi-sub">assigned → approved</span></div>
+
+  <div class="stat"><small>Overdue now</small><b class="{% if summary.overdue_now %}red{% endif %}">{{ summary.overdue_now }}</b>
+    <span class="kpi-sub">{{ summary.changes }} change request{{ summary.changes|pluralize }}</span></div>
 </div>
 
+{% if summary.assigned %}
+{# ---------- status breakdown + daily chart ---------- #}
+<div class="rep-charts">
+  <div class="panel">
+    <h2>Where the work stands</h2>
+    <div class="stackbar" role="img" aria-label="Tasks by status">
+      {% for b in breakdown %}{% if b.count %}<i class="s-{{ b.status }}" style="width:{{ b.pct }}%" title="{{ b.label }}: {{ b.count }}"></i>{% endif %}{% endfor %}
+    </div>
+    <div class="stack-legend">
+      {% for b in breakdown %}
+        <span><i class="dot s-{{ b.status }}"></i>{{ b.label }} <b>{{ b.count }}</b></span>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if daily %}
+  <div class="panel">
+    <h2>Tasks due each day <small>dark = done</small></h2>
+    <div class="daychart" role="img" aria-label="Tasks due and done per day">
+      {% for d in daily %}
+        <div class="dc-col" title="{{ d.day|date:'D j M' }}: {{ d.done }} of {{ d.due }} done">
+          <div class="dc-bar"><i class="dc-due" style="height:{{ d.h_due }}%"></i><i class="dc-done" style="height:{{ d.h_done }}%"></i></div>
+          <span class="{% if d.day.weekday == 6 %}sun{% endif %}">{{ d.day.day }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ---------- member table (sortable) ---------- #}
 {% if not single %}
 <div class="panel">
-  <h2>Member summary <small>{{ month|date:"F Y" }}</small></h2>
+  <h2>Member performance <small>{{ period.label }} · click a column to sort</small></h2>
   <div class="scroll">
-    <table class="rep">
-      <thead><tr><th>Member</th><th>Assigned</th><th>Completed</th><th>On time</th><th>Late / missed</th><th>Changes</th><th>Completion</th></tr></thead>
+    <table class="rep sortable" data-sortable>
+      <thead><tr>
+        <th data-type="text">Member</th>
+        <th>Tasks</th><th>Done</th><th>Completion</th><th>On time</th>
+        <th>First time</th><th>Avg. turnaround</th><th>Overdue now</th><th>Changes</th>
+      </tr></thead>
       <tbody>
-      {% for r in rows %}
-        <tr><td><a class="link" href="?month={{ month|date:'Y-m' }}&member={{ r.user.id }}"><b>{{ r.user.display_name }}</b></a></td>
-          <td>{{ r.summary.assigned }}</td><td>{{ r.summary.done }}</td><td>{{ r.summary.on_time }}</td>
-          <td class="{% if r.summary.late %}red{% endif %}">{{ r.summary.late }}</td><td>{{ r.summary.changes }}</td><td>{{ r.summary.pct }}%</td></tr>
-      {% empty %}<tr><td colspan="7" class="muted">No people yet</td></tr>{% endfor %}
+      {% for r in rows %}{% with s=r.summary %}
+        <tr>
+          <td data-v="{{ r.user.display_name|lower }}"><a class="link" href="?{% if period.key == 'month' %}month={{ month|date:'Y-m' }}{% else %}period={{ period.key }}&start={{ period.start|date:'Y-m-d' }}&end={{ period.end|date:'Y-m-d' }}{% endif %}&member={{ r.user.id }}"><b>{{ r.user.display_name }}</b></a>{% if r.user.designation %} <span class="muted small">{{ r.user.designation }}</span>{% endif %}</td>
+          <td data-v="{{ s.assigned }}">{{ s.assigned }}</td>
+          <td data-v="{{ s.done }}">{{ s.done }}</td>
+          <td data-v="{{ s.pct }}"><span class="minibar"><i style="width:{{ s.pct }}%"></i></span>{{ s.pct }}%</td>
+          <td data-v="{{ s.on_time_pct|default_if_none:'-1' }}">{{ s.on_time_pct|default_if_none:"—" }}{% if s.on_time_pct is not None %}%{% endif %}</td>
+          <td data-v="{{ s.first_pass_pct|default_if_none:'-1' }}">{{ s.first_pass_pct|default_if_none:"—" }}{% if s.first_pass_pct is not None %}%{% endif %}</td>
+          <td data-v="{{ s.avg_turnaround|default_if_none:'99999' }}">{{ s.turnaround_label|default:"—" }}</td>
+          <td data-v="{{ s.overdue_now }}" class="{% if s.overdue_now %}red{% endif %}">{{ s.overdue_now }}</td>
+          <td data-v="{{ s.changes }}">{{ s.changes }}</td>
+        </tr>
+      {% endwith %}{% empty %}<tr><td colspan="9" class="muted">No people yet</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 {% endif %}
 
+{# ---------- day-by-day grid ---------- #}
 <div class="panel">
-  <h2>Day by day <small>{% if single %}{{ selected_user.display_name }} · {% endif %}{{ month|date:"F Y" }} · completed / assigned</small></h2>
+  <h2>Day by day <small>{% if single %}{{ selected_user.display_name }} · {% endif %}completed / due</small></h2>
+  {% if days %}
   <div class="scroll">
     <table class="grid">
       <thead><tr><th class="name"></th>
@@ -58,17 +144,34 @@
     </table>
   </div>
   <div class="legend"><span><i class="all"></i>All done</span><span><i class="part" style="--mix:40%"></i>Partly done</span><span><i class="miss" style="--mix:45%"></i>Missed / overdue</span><span>Counted by due date</span></div>
+  {% else %}
+    <p class="muted small">The day-by-day grid is shown for periods of up to {{ max_grid_days }} days. Pick a shorter period to see it.</p>
+  {% endif %}
 </div>
 
+{# ---------- task log ---------- #}
 <div class="panel">
-  <h2>Task log</h2>
+  <div class="row-between">
+    <h2>Task log <small>click a task to open it</small></h2>
+    <div class="team-tabs no-print" data-log-filters>
+      <button type="button" class="team-tab on" data-log="all">All</button>
+      <button type="button" class="team-tab" data-log="done">Done</button>
+      <button type="button" class="team-tab" data-log="open">Not done</button>
+      <button type="button" class="team-tab" data-log="late">Late</button>
+      <button type="button" class="team-tab" data-log="changes">Had changes</button>
+    </div>
+  </div>
+  <div data-log-list>
   {% for d in log %}
     <div class="day-block">
       <div class="day-h">{{ d.day|date:"D, j M" }} <span class="muted">{{ d.summary.done }}/{{ d.summary.assigned }} done</span></div>
       {% for t in d.tasks %}
-        <div class="day-row">
+        <div class="day-row log-row" data-open-task="{{ t.pk }}" tabindex="0" role="button"
+             data-done="{% if t.status == 'done' %}1{% endif %}"
+             data-late="{% if t.is_late or t.finished_late %}1{% endif %}"
+             data-changes="{% if t.change_count %}1{% endif %}">
           <span class="st s-{{ t.status }}">{{ t.get_status_display }}</span>
-          <span class="t">{{ t.title }}{% if not single %} <span class="muted">· {{ t.assignee.display_name }}</span>{% endif %}</span>
+          <span class="t"><span class="pill p-{{ t.priority }}">{{ t.get_priority_display }}</span> {{ t.title }}{% if not single %} <span class="muted">· {{ t.assignee.display_name }}</span>{% endif %}</span>
           <span class="muted small">
             {% if t.status == "done" %}Approved {{ t.done_at|date:"j M, g:i A" }}{% if t.approved_by %} by {{ t.approved_by.display_name }}{% endif %}{% elif t.submitted_at %}Submitted {{ t.submitted_at|date:"j M, g:i A" }}{% endif %}
             {% if t.is_late or t.finished_late %} · <b class="red">Late</b>{% endif %}
@@ -77,6 +180,68 @@
         </div>
       {% endfor %}
     </div>
-  {% empty %}<div class="empty">No tasks due in this month.</div>{% endfor %}
+  {% empty %}<div class="empty">No tasks due in this period.</div>{% endfor %}
+  </div>
+  <div class="empty" data-log-empty hidden>No tasks match this filter.</div>
 </div>
+
+{% include "tasks/_task_modal.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // Show only the date boxes that fit the chosen period.
+  const f = document.getElementById("repFilters");
+  const period = f && f.querySelector("[data-period]");
+  function syncPeriod() {
+    f.querySelectorAll("[data-show-period]").forEach(el => { el.hidden = el.dataset.showPeriod !== period.value; });
+  }
+  if (period) {
+    syncPeriod();
+    period.addEventListener("change", () => { syncPeriod(); if (period.value !== "custom") f.submit(); });
+  }
+
+  // Sortable member table: click a column header.
+  document.querySelectorAll("table[data-sortable]").forEach(table => {
+    const body = table.tBodies[0];
+    table.querySelectorAll("th").forEach((th, i) => {
+      let asc = th.dataset.type === "text";
+      th.addEventListener("click", () => {
+        const rows = [...body.rows].filter(r => r.cells.length > 1);
+        const text = th.dataset.type === "text";
+        rows.sort((a, b) => {
+          const x = a.cells[i].dataset.v, y = b.cells[i].dataset.v;
+          const r = text ? x.localeCompare(y) : parseFloat(x) - parseFloat(y);
+          return asc ? r : -r;
+        });
+        rows.forEach(r => body.append(r));
+        table.querySelectorAll("th").forEach(h => h.classList.remove("asc", "desc"));
+        th.classList.add(asc ? "asc" : "desc");
+        asc = !asc;
+      });
+    });
+  });
+
+  // Task log filters.
+  const list = document.querySelector("[data-log-list]");
+  const empty = document.querySelector("[data-log-empty]");
+  document.querySelectorAll("[data-log]").forEach(btn => btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-log]").forEach(b => b.classList.toggle("on", b === btn));
+    const k = btn.dataset.log;
+    let shown = 0;
+    list.querySelectorAll(".day-block").forEach(block => {
+      let any = false;
+      block.querySelectorAll(".log-row").forEach(row => {
+        const ok = k === "all" || (k === "done" && row.dataset.done) || (k === "open" && !row.dataset.done)
+          || (k === "late" && row.dataset.late) || (k === "changes" && row.dataset.changes);
+        row.hidden = !ok;
+        if (ok) { any = true; shown++; }
+      });
+      block.hidden = !any;
+    });
+    if (empty) empty.hidden = shown > 0 || !list.querySelector(".log-row");
+  }));
+})();
+</script>
 {% endblock %}
