@@ -364,24 +364,123 @@ def attachment(request, pk):
 # ---------------------------------------------------------------- member view
 
 
+NEEDS_WORK = (S.TODO, S.PROGRESS, S.CHANGE)
+
+MY_FILTERS = [
+    ("open", "Open tasks"),
+    ("today", "Due today"),
+    ("week", "Due this week"),
+    ("overdue", "Overdue"),
+    ("changes", "Changes requested"),
+    ("waiting", "Waiting for approval"),
+    ("tagged", "Tagged on"),
+    ("month", "This month"),
+    ("all", "Everything"),
+]
+
+
+def _due_label(t, today):
+    if t.status == S.DONE:
+        return "Done"
+    days = (t.due_date - today).days
+    if days < 0:
+        return f"Overdue · {-days} day{'s' if days != -1 else ''}"
+    if days == 0:
+        return "Due today"
+    if days == 1:
+        return "Due tomorrow"
+    if days < 7:
+        return f"Due {t.due_date:%a, %d %b}"
+    return f"Due {t.due_date:%d %b}"
+
+
+def _agenda(tasks, today):
+    """Group tasks by deadline for the list view."""
+    week_end = today + timedelta(days=6 - today.weekday())
+    groups = [
+        ("overdue", "Overdue", []), ("today", "Today", []), ("tomorrow", "Tomorrow", []),
+        ("week", "Later this week", []), ("later", "Later", []), ("done", "Done", []),
+    ]
+    by_key = {k: items for k, _, items in groups}
+    for t in tasks:
+        t.due_label = _due_label(t, today)
+        if t.status == S.DONE:
+            by_key["done"].append(t)
+        elif t.due_date < today:
+            by_key["overdue"].append(t)
+        elif t.due_date == today:
+            by_key["today"].append(t)
+        elif t.due_date == today + timedelta(days=1):
+            by_key["tomorrow"].append(t)
+        elif t.due_date <= week_end:
+            by_key["week"].append(t)
+        else:
+            by_key["later"].append(t)
+    return [{"key": k, "label": label, "tasks": _sorted(items)} for k, label, items in groups if items]
+
+
 @login_required
 def my_tasks(request):
+    user = request.user
     show = request.GET.get("show", "open")
-    today = timezone.localdate()
-    qs = (
-        Task.objects.filter(assignee=request.user).select_related("assignee").prefetch_related("attachments")
+    now = timezone.localtime()
+    today = now.date()
+    week_end = today + timedelta(days=6 - today.weekday())
+
+    base = (
+        Task.objects.select_related("assignee", "assigned_by").prefetch_related("attachments")
         .annotate(comment_count=Count("comments", distinct=True))
     )
-    if show == "month":
-        qs = qs.filter(due_date__year=today.year, due_date__month=today.month)
+    mine = base.filter(assignee=user)
+
+    if show == "today":
+        qs = mine.filter(due_date=today)
+    elif show == "week":
+        qs = mine.filter(due_date__range=(today, week_end))
+    elif show == "overdue":
+        qs = mine.filter(status__in=NEEDS_WORK, due_date__lt=today)
+    elif show == "changes":
+        qs = mine.filter(status=S.CHANGE)
+    elif show == "waiting":
+        qs = mine.filter(status=S.REVIEW)
+    elif show == "tagged":
+        qs = base.filter(watchers=user).exclude(assignee=user).distinct()
+    elif show == "month":
+        qs = mine.filter(due_date__year=today.year, due_date__month=today.month)
     elif show == "all":
-        pass
+        qs = mine
     else:
         show = "open"
-        tasks = [t for t in qs if t.status != S.DONE or t.done_date == today]
-        qs = tasks
+        qs = [t for t in mine if t.status != S.DONE or t.done_date == today]
     tasks = list(qs)
-    return render(request, "tasks/my_tasks.html", {"board": _board(tasks), "stats": _stats(tasks), "show": show})
+
+    # "Needs your attention" numbers – always about your own open work.
+    open_mine = list(Task.objects.filter(assignee=user).exclude(status=S.DONE).only("status", "due_date"))
+    focus = {
+        "overdue": sum(1 for t in open_mine if t.status in NEEDS_WORK and t.due_date < today),
+        "today": sum(1 for t in open_mine if t.status in NEEDS_WORK and t.due_date == today),
+        "week": sum(1 for t in open_mine if t.status in NEEDS_WORK and today <= t.due_date <= week_end),
+        "changes": sum(1 for t in open_mine if t.status == S.CHANGE),
+        "waiting": sum(1 for t in open_mine if t.status == S.REVIEW),
+        "tagged": Task.objects.filter(watchers=user).exclude(assignee=user).exclude(status=S.DONE).distinct().count(),
+    }
+    month_summary = reports.summarize(
+        Task.objects.filter(assignee=user, due_date__year=today.year, due_date__month=today.month)
+    )
+    greeting = "Good morning" if now.hour < 12 else "Good afternoon" if now.hour < 17 else "Good evening"
+
+    return render(request, "tasks/my_tasks.html", {
+        "board": _board(tasks),
+        "stats": _stats(tasks),
+        "agenda": _agenda(tasks, today),
+        "show": show,
+        "filters": MY_FILTERS,
+        "focus": focus,
+        "month_summary": month_summary,
+        "greeting": greeting,
+        "today": today,
+        "is_tagged_view": show == "tagged",
+    })
 
 
 # ---------------------------------------------------------------- reports

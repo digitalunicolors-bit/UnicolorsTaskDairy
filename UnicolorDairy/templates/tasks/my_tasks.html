@@ -1,19 +1,125 @@
 {% extends "base.html" %}
 {% block content %}
-<form method="get" action="{% url 'search' %}" class="search-bar" role="search">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-  <input type="search" name="q" placeholder="Search tasks, briefs and comments…" aria-label="Search tasks">
-</form>
 
-<form method="get" class="controls">
-  <label class="inline">Show
-    <select name="show" onchange="this.form.submit()">
-      <option value="open" {% if show == 'open' %}selected{% endif %}>Open tasks</option>
-      <option value="month" {% if show == 'month' %}selected{% endif %}>This month</option>
-      <option value="all" {% if show == 'all' %}selected{% endif %}>Everything</option>
-    </select>
-  </label>
-  <noscript><button class="sm">Apply</button></noscript>
-</form>
-{% include "tasks/_board.html" with admin_view=user.is_admin show_member=False %}
+{# ---------- greeting ---------- #}
+<div class="row-between my-top">
+  <div>
+    <h2 class="my-h">{{ greeting }}, {{ user.first_name|default:user.display_name }} 👋</h2>
+    <p class="muted small">
+      {{ today|date:"l, j F Y" }} ·
+      {% if focus.overdue %}<b class="red">{{ focus.overdue }} overdue</b> · {% endif %}
+      {% if focus.today %}{{ focus.today }} due today{% else %}nothing due today{% endif %}
+      {% if focus.changes %} · {{ focus.changes }} need{{ focus.changes|pluralize:"s," }} changes{% endif %}
+    </p>
+  </div>
+  <form method="get" action="{% url 'search' %}" class="search-bar my-search" role="search">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input type="search" name="q" placeholder="Search tasks, briefs and comments…" aria-label="Search tasks">
+  </form>
+</div>
+
+{# ---------- needs your attention ---------- #}
+<div class="focus-strip">
+  <a class="focus-card red {% if show == 'overdue' %}on{% endif %} {% if not focus.overdue %}zero{% endif %}" href="?show=overdue">
+    <b>{{ focus.overdue }}</b><span>Overdue</span>
+  </a>
+  <a class="focus-card amber {% if show == 'today' %}on{% endif %} {% if not focus.today %}zero{% endif %}" href="?show=today">
+    <b>{{ focus.today }}</b><span>Due today</span>
+  </a>
+  <a class="focus-card blue {% if show == 'week' %}on{% endif %} {% if not focus.week %}zero{% endif %}" href="?show=week">
+    <b>{{ focus.week }}</b><span>Due this week</span>
+  </a>
+  <a class="focus-card pink {% if show == 'changes' %}on{% endif %} {% if not focus.changes %}zero{% endif %}" href="?show=changes">
+    <b>{{ focus.changes }}</b><span>Changes requested</span>
+  </a>
+  <a class="focus-card gold {% if show == 'waiting' %}on{% endif %} {% if not focus.waiting %}zero{% endif %}" href="?show=waiting">
+    <b>{{ focus.waiting }}</b><span>Waiting for approval</span>
+  </a>
+  <a class="focus-card grey {% if show == 'tagged' %}on{% endif %} {% if not focus.tagged %}zero{% endif %}" href="?show=tagged">
+    <b>{{ focus.tagged }}</b><span>Tagged on</span>
+  </a>
+</div>
+
+{# ---------- my month ---------- #}
+<div class="my-month">
+  <span class="muted small">{{ today|date:"F" }}:</span>
+  <span><b>{{ month_summary.done }}</b>/{{ month_summary.assigned }} done</span>
+  <span class="minibar"><i style="width:{{ month_summary.pct }}%"></i></span>
+  <span>On time <b>{{ month_summary.on_time_pct|default_if_none:"—" }}{% if month_summary.on_time_pct is not None %}%{% endif %}</b></span>
+  <span>Approved first time <b>{{ month_summary.first_pass_pct|default_if_none:"—" }}{% if month_summary.first_pass_pct is not None %}%{% endif %}</b></span>
+  <a class="link small" href="{% url 'report' %}">My full report →</a>
+</div>
+
+{# ---------- filters + view switch ---------- #}
+<div class="controls my-controls">
+  <form method="get">
+    <label class="inline">Show
+      <select name="show" onchange="this.form.submit()">
+        {% for value, label in filters %}<option value="{{ value }}" {% if show == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <noscript><button class="sm">Apply</button></noscript>
+  </form>
+  {% if show != 'open' %}<a class="btn clear-btn" href="{% url 'my_tasks' %}">✕ Clear</a>{% endif %}
+  <div class="view-switch" role="group" aria-label="View">
+    <button type="button" class="vs-btn" data-view="board">▦ Board</button>
+    <button type="button" class="vs-btn" data-view="list">☰ List</button>
+  </div>
+</div>
+
+{% if is_tagged_view %}<p class="muted small">Tasks other people own where you were @tagged. You can read them and comment; only the owner can move them.</p>{% endif %}
+
+{# ---------- list view (grouped by deadline) ---------- #}
+<div class="panel agenda" data-view-panel="list" hidden>
+  {% for g in agenda %}
+    <div class="ag-group ag-{{ g.key }}">
+      <div class="ag-h">{{ g.label }} <span class="muted">{{ g.tasks|length }}</span></div>
+      {% for t in g.tasks %}
+        <div class="ag-row" data-open-task="{{ t.pk }}" tabindex="0" role="button" aria-label="Open {{ t.title }}">
+          <span class="dot s-{{ t.status }}" title="{{ t.get_status_display }}"></span>
+          <div class="ag-main">
+            <div class="ag-title">{{ t.title }}</div>
+            <div class="meta">
+              <span class="pill p-{{ t.priority }}">{{ t.get_priority_display }}</span>
+              <span class="pill">{{ t.get_status_display }}</span>
+              {% if is_tagged_view %}<span class="pill who">{{ t.assignee.display_name }}</span>{% endif %}
+              {% if t.assigned_by %}<span class="muted small">from {{ t.assigned_by.display_name }}</span>{% endif %}
+              {% if t.comment_count %}<span class="pill">💬 {{ t.comment_count }}</span>{% endif %}
+              {% if t.recurring_id %}<span class="pill">↻ Repeats</span>{% endif %}
+            </div>
+          </div>
+          <span class="ag-due {% if g.key == 'overdue' %}red{% elif g.key == 'today' %}amber{% endif %}">{{ t.due_label }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% empty %}
+    <div class="empty">
+      {% if show == 'open' %}🎉 You're all caught up — no open tasks.{% else %}Nothing here. Try another filter.{% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+{# ---------- board view ---------- #}
+<div data-view-panel="board">
+  {% include "tasks/_board.html" with admin_view=user.is_admin show_member=is_tagged_view %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // Board / List switch – remembered on this browser.
+  const KEY = "myTasksView";
+  let view = "board";
+  try { view = localStorage.getItem(KEY) || "board"; } catch (e) {}
+  function apply(v) {
+    view = v;
+    document.querySelectorAll("[data-view-panel]").forEach(p => { p.hidden = p.dataset.viewPanel !== v; });
+    document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+    try { localStorage.setItem(KEY, v); } catch (e) {}
+  }
+  document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => apply(b.dataset.view)));
+  apply(view);
+})();
+</script>
 {% endblock %}
