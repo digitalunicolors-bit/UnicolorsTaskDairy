@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="narrow">
+  <div class="panel noaccess">
+    <div class="noaccess-ico" aria-hidden="true">🔒</div>
+    <h2>You don't have access to this page</h2>
+    <p class="muted">
+      {% if user.is_authenticated %}
+        This page or task belongs to someone else, or is only for admins.
+        If you think you should see it, ask your admin.
+      {% else %}
+        Please log in to continue.
+      {% endif %}
+    </p>
+    <div class="row noaccess-actions">
+      {% if user.is_authenticated %}
+        <a class="btn primary" href="{% url 'home' %}">Go to {% if user.is_admin %}dashboard{% else %}my tasks{% endif %}</a>
+      {% else %}
+        <a class="btn primary" href="{% url 'login' %}">Log in</a>
+      {% endif %}
+      <a class="btn" href="javascript:history.back()">← Go back</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

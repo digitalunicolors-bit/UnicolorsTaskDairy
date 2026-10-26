@@ -37,11 +37,16 @@ S = Task.Status
 
 
 def admin_required(view):
+    """Admin-only pages. Team members are sent back to My Tasks with a friendly message
+    (instead of a "403 Forbidden" page)."""
     @wraps(view)
     @login_required
     def wrapper(request, *args, **kwargs):
         if not request.user.is_admin:
-            raise PermissionDenied
+            if request.headers.get("X-Requested-With") == "fetch":
+                raise PermissionDenied  # background requests just get "no access"
+            messages.info(request, "That page is only for admins, so we brought you to your tasks.")
+            return redirect("my_tasks")
         return view(request, *args, **kwargs)
 
     return wrapper

@@ -1848,3 +1848,28 @@ mark {
     background: color-mix(in srgb, var(--c-done) 15%, var(--surface2));
     color: var(--c-done)
 }
+
+/* no-access page */
+.noaccess {
+    text-align: center;
+    padding: 32px 24px
+}
+
+.noaccess-ico {
+    font-size: 40px;
+    margin-bottom: 8px
+}
+
+.noaccess h2 {
+    font-size: 19px;
+    margin: 0 0 8px
+}
+
+.noaccess p {
+    margin: 0 0 18px;
+    line-height: 1.6
+}
+
+.noaccess-actions {
+    justify-content: center
+}
