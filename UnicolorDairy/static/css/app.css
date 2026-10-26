@@ -1873,3 +1873,280 @@ mark {
 .noaccess-actions {
     justify-content: center
 }
+
+/* team page */
+.team-top {
+    margin-bottom: 14px;
+    align-items: flex-end
+}
+
+.team-h {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 800
+}
+
+.team-top p {
+    margin: 2px 0 0
+}
+
+.amber {
+    color: var(--c-review)
+}
+
+.team-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    align-items: flex-end;
+    margin-bottom: 6px
+}
+
+.team-search {
+    margin: 0;
+    flex: 1 1 260px;
+    max-width: none
+}
+
+.team-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px
+}
+
+.team-tab {
+    font-size: 12.5px;
+    padding: 6px 11px;
+    border-radius: 99px
+}
+
+.team-tab span {
+    margin-left: 4px;
+    color: var(--muted);
+    font-weight: 700
+}
+
+.team-tab.on {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--bg)
+}
+
+.team-tab.on span {
+    color: var(--bg);
+    opacity: .75
+}
+
+.team-sort select {
+    min-width: 170px
+}
+
+.team-list {
+    display: flex;
+    flex-direction: column
+}
+
+.person {
+    display: grid;
+    grid-template-columns: auto minmax(200px, 1.4fr) minmax(190px, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 14px 4px;
+    border-bottom: 1px solid var(--line)
+}
+
+.person:last-child {
+    border-bottom: none
+}
+
+.person[hidden] {
+    display: none
+}
+
+.person.is-inactive {
+    opacity: .55
+}
+
+.person.is-pending,
+.person.is-expired {
+    background: color-mix(in srgb, var(--c-review) 5%, transparent)
+}
+
+.avatar.is-admin {
+    background: var(--ink);
+    color: var(--bg)
+}
+
+.person-main {
+    min-width: 0
+}
+
+.person-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 2px
+}
+
+.person-head .role {
+    margin: 0
+}
+
+.person-head .invite-status {
+    margin-left: 0
+}
+
+.person-sub {
+    word-break: break-word
+}
+
+.you {
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 1px 6px;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--c-prog) 18%, var(--surface2));
+    color: var(--c-prog)
+}
+
+.person-load .progress {
+    margin-top: 5px
+}
+
+.load-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 4px
+}
+
+.lchip {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: var(--surface2);
+    color: var(--muted)
+}
+
+.lchip b {
+    color: var(--ink)
+}
+
+.lchip.amber {
+    background: color-mix(in srgb, var(--c-review) 14%, var(--surface2));
+    color: var(--c-review)
+}
+
+.lchip.amber b {
+    color: var(--c-review)
+}
+
+.lchip.red {
+    background: color-mix(in srgb, var(--hi) 14%, var(--surface2));
+    color: var(--hi)
+}
+
+.lchip.red b {
+    color: var(--hi)
+}
+
+.person-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap
+}
+
+details.menu {
+    position: relative
+}
+
+details.menu>summary {
+    list-style: none
+}
+
+details.menu>summary::-webkit-details-marker {
+    display: none
+}
+
+.menu-list {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 30;
+    min-width: 190px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .25);
+    padding: 4px
+}
+
+.menu-list form {
+    margin: 0
+}
+
+.menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: none;
+    padding: 8px 10px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    cursor: pointer
+}
+
+.menu-item:hover {
+    background: var(--surface2)
+}
+
+.menu-item.danger {
+    color: var(--hi)
+}
+
+.team-foot {
+    margin-top: -4px
+}
+
+@media (max-width:860px) {
+    .person {
+        grid-template-columns: auto 1fr;
+    }
+
+    .person-load,
+    .person-actions {
+        grid-column: 2
+    }
+
+    .person-actions {
+        justify-content: flex-start
+    }
+}
+
+/* add / edit person form */
+.back-link {
+    display: inline-block;
+    margin-bottom: 8px
+}
+
+.form-person {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    border-radius: 10px;
+    background: var(--surface2)
+}
+
+.form-side-link {
+    margin-left: auto
+}

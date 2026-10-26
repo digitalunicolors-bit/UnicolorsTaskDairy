@@ -1,175 +1,209 @@
 {% extends "base.html" %}
-
 {% block content %}
 
-<div class="panel">
-
-  <div class="row-between">
-
-    <h2>
-      Team
-      <small>
-        admins and members · this month's progress
-      </small>
-    </h2>
-
-    <div class="row">
-
-      <form
-        method="post"
-        action="{% url 'resend_all_invites' %}"
-      >
-        {% csrf_token %}
-
-        <button
-          class="btn"
-          type="submit"
-        >
-          ↻ Resend pending
-        </button>
-
-      </form>
-
-      <a
-        class="btn primary"
-        href="{% url 'user_add' %}"
-      >
-        + Add person
-      </a>
-
-    </div>
-
+{# ---------- header ---------- #}
+<div class="row-between team-top">
+  <div>
+    <h2 class="team-h">Team</h2>
+    <p class="muted small">Manage who can log in, their role, and see everyone's workload at a glance.</p>
   </div>
-
-  <p class="muted small">
-    Admins can assign, approve and see everyone's reports.
-    Team members see only their own tasks.
-  </p>
-
-
-  {% for u, s, invite_status in rows %}
-
-    <div class="team-row {% if not u.is_active %}inactive{% endif %}">
-
-      <span class="avatar">
-        {{ u.initials }}
-      </span>
-
-      <div class="grow">
-
-        <div class="member-head">
-
-          <b>
-            {{ u.display_name }}
-          </b>
-
-          <span class="role {% if u.is_admin %}admin{% endif %}">
-            {% if u.is_admin %}
-              Admin
-            {% else %}
-              Member
-            {% endif %}
-          </span>
-
-
-          {% if u != user %}
-
-            {% if invite_status == "joined" %}
-
-              <span class="invite-status joined">
-                ✓ Joined
-              </span>
-
-            {% elif invite_status == "expired" %}
-
-              <span class="invite-status expired">
-                ⚠ Invite expired
-              </span>
-
-            {% elif invite_status == "pending" %}
-
-              <span class="invite-status pending">
-                ● Invite pending
-              </span>
-
-            {% endif %}
-
-          {% endif %}
-
-        </div>
-
-
-        <span class="muted">
-
-          @{{ u.username }}
-
-          {% if u.designation %}
-            · {{ u.designation }}
-          {% endif %}
-
-          {% if u == user %}
-            · you
-          {% endif %}
-
-        </span>
-
-
-        <div class="muted small">
-
-          {{ s.done }}/{{ s.assigned }} done
-
-          {% if s.late %}
-
-            ·
-            <span class="red">
-              {{ s.late }} late
-            </span>
-
-          {% endif %}
-
-        </div>
-
-
-        <div class="progress">
-          <i style="width:{{ s.pct }}%"></i>
-        </div>
-
-      </div>
-
-
-      {% if u != user and invite_status != "joined" %}
-
-        <form
-          method="post"
-          action="{% url 'resend_invite' u.pk %}"
-        >
-          {% csrf_token %}
-
-          <button
-            type="submit"
-            class="btn sm invite-btn"
-          >
-            ↻ Resend invite
-          </button>
-
-        </form>
-
-      {% endif %}
-
-
-      <a
-        class="btn sm"
-        href="{% url 'user_edit' u.pk %}"
-      >
-        Edit / role
-      </a>
-
-      
-
-    </div>
-
-  {% endfor %}
-
+  <div class="row">
+    {% if counts.pending %}
+      <form method="post" action="{% url 'resend_all_invites' %}">{% csrf_token %}
+        <button class="btn" type="submit">↻ Resend {{ counts.pending }} pending invite{{ counts.pending|pluralize }}</button>
+      </form>
+    {% endif %}
+    <a class="btn primary" href="{% url 'user_add' %}">+ Add person</a>
+  </div>
 </div>
 
+{# ---------- summary numbers ---------- #}
+<div class="stats">
+  <div class="stat"><small>People</small><b>{{ counts.all }}</b></div>
+  <div class="stat"><small>Admins</small><b>{{ counts.admin }}</b></div>
+  <div class="stat"><small>Members</small><b>{{ counts.member }}</b></div>
+  <div class="stat"><small>Invites pending</small><b class="{% if counts.pending %}amber{% endif %}">{{ counts.pending }}</b></div>
+  <div class="stat"><small>Open tasks (team)</small><b>{{ total_open }}</b></div>
+</div>
+
+<div class="panel">
+  {# ---------- search, filter, sort ---------- #}
+  <div class="team-controls">
+    <div class="search-bar team-search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" placeholder="Search name, username, email or designation…" data-team-search aria-label="Search people">
+    </div>
+    <div class="team-tabs" role="tablist">
+      <button type="button" class="team-tab on" data-filter="all">All <span>{{ counts.all }}</span></button>
+      <button type="button" class="team-tab" data-filter="admin">Admins <span>{{ counts.admin }}</span></button>
+      <button type="button" class="team-tab" data-filter="member">Members <span>{{ counts.member }}</span></button>
+      <button type="button" class="team-tab" data-filter="pending">Pending invites <span>{{ counts.pending }}</span></button>
+      <button type="button" class="team-tab" data-filter="inactive">Deactivated <span>{{ counts.inactive }}</span></button>
+    </div>
+    <label class="inline team-sort">Sort by
+      <select data-team-sort>
+        <option value="default">Status, then name</option>
+        <option value="name">Name (A–Z)</option>
+        <option value="open">Most open tasks</option>
+        <option value="overdue">Most overdue</option>
+        <option value="pct">Completion this month</option>
+      </select>
+    </label>
+  </div>
+
+  {# ---------- people ---------- #}
+  <div class="team-list" data-team-list>
+  {% for r in rows %}{% with u=r.user s=r.summary %}
+    <div class="person {% if r.state != 'active' %}is-{{ r.state }}{% endif %}"
+         data-order="{{ forloop.counter }}"
+         data-name="{{ u.display_name|lower }}"
+         data-search="{{ u.display_name|lower }} {{ u.username|lower }} {{ u.email|lower }} {{ u.designation|lower }}"
+         data-role="{% if u.is_admin %}admin{% else %}member{% endif %}"
+         data-state="{{ r.state }}"
+         data-open="{{ r.open }}" data-overdue="{{ r.overdue }}" data-pct="{{ s.pct }}">
+
+      <span class="avatar {% if u.is_admin %}is-admin{% endif %}">{{ u.initials }}</span>
+
+      {# who #}
+      <div class="person-main">
+        <div class="person-head">
+          <b>{{ u.display_name }}</b>
+          {% if u == user %}<span class="you">You</span>{% endif %}
+          <span class="role {% if u.is_admin %}admin{% endif %}">{% if u.is_admin %}Admin{% else %}Member{% endif %}</span>
+          {% if r.state == "pending" %}<span class="invite-status pending">● Invite pending</span>
+          {% elif r.state == "expired" %}<span class="invite-status expired">⚠ Invite expired</span>
+          {% elif r.state == "inactive" %}<span class="invite-status expired">Deactivated</span>{% endif %}
+        </div>
+        <div class="muted small person-sub">
+          @{{ u.username }}{% if u.designation %} · {{ u.designation }}{% endif %}{% if u.email %} · <a class="link" href="mailto:{{ u.email }}">{{ u.email }}</a>{% endif %}
+        </div>
+        <div class="muted small">
+          {% if r.state == "pending" or r.state == "expired" %}
+            Invited {{ u.invite_sent_at|timesince }} ago
+          {% elif u.last_login %}
+            Last seen {{ u.last_login|timesince }} ago
+          {% else %}
+            Never logged in
+          {% endif %}
+        </div>
+      </div>
+
+      {# workload #}
+      <div class="person-load">
+        <div class="load-chips">
+          <span class="lchip" title="Tasks not done yet"><b>{{ r.open }}</b> open</span>
+          {% if r.review %}<span class="lchip amber" title="Waiting for approval"><b>{{ r.review }}</b> to approve</span>{% endif %}
+          {% if r.overdue %}<span class="lchip red" title="Past due date and not done"><b>{{ r.overdue }}</b> overdue</span>{% endif %}
+        </div>
+        <div class="muted small">{{ month|date:"M" }}: {{ s.done }}/{{ s.assigned }} done{% if s.assigned %} · {{ s.pct }}%{% endif %}{% if s.late %} · <span class="red">{{ s.late }} late</span>{% endif %}</div>
+        <div class="progress"><i style="width:{{ s.pct }}%"></i></div>
+      </div>
+
+      {# actions #}
+      <div class="person-actions">
+        {% if r.state == "active" or r.state == "inactive" %}
+          <a class="btn sm" href="{% url 'dashboard' %}?show=month&member={{ u.pk }}" title="Board filtered to this person, this month">Tasks</a>
+          <a class="btn sm" href="{% url 'report' %}?member={{ u.pk }}">Report</a>
+        {% endif %}
+        <a class="btn sm" href="{% url 'user_edit' u.pk %}">Edit</a>
+
+        <details class="menu">
+          <summary class="btn sm" aria-label="More actions">⋯</summary>
+          <div class="menu-list">
+            {% if r.state == "pending" or r.state == "expired" %}
+              <form method="post" action="{% url 'resend_invite' u.pk %}">{% csrf_token %}
+                <button class="menu-item">↻ Resend invite</button>
+              </form>
+              {% if not r.has_tasks %}
+                <form method="post" action="{% url 'user_cancel_invite' u.pk %}" onsubmit="return confirm('Cancel the invitation for {{ u.display_name|escapejs }}? They will be removed from the team list.')">{% csrf_token %}
+                  <button class="menu-item danger">✕ Cancel invite</button>
+                </form>
+              {% endif %}
+            {% else %}
+              <a class="menu-item" href="{% url 'user_password' u.pk %}">🔑 Reset password</a>
+              {% if u != user %}
+                <form method="post" action="{% url 'user_toggle_active' u.pk %}"
+                      {% if u.is_active %}onsubmit="return confirm('Deactivate {{ u.display_name|escapejs }}? They won\'t be able to log in. Their tasks and history are kept.')"{% endif %}>{% csrf_token %}
+                  {% if u.is_active %}
+                    <button class="menu-item danger">⏸ Deactivate</button>
+                  {% else %}
+                    <button class="menu-item">▶ Reactivate</button>
+                  {% endif %}
+                </form>
+              {% endif %}
+            {% endif %}
+            {% if u.email %}<a class="menu-item" href="mailto:{{ u.email }}">✉ Send email</a>{% endif %}
+          </div>
+        </details>
+      </div>
+    </div>
+  {% endwith %}{% endfor %}
+  </div>
+
+  <div class="empty" data-team-empty hidden>No one matches. Try another name or filter.</div>
+</div>
+
+<p class="muted small team-foot">
+  Admins can assign, approve and see everyone's reports. Members see only their own tasks.
+  Deactivated people can't log in, but their tasks and history stay.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const list = document.querySelector("[data-team-list]");
+  if (!list) return;
+  const people = [...list.querySelectorAll(".person")];
+  const search = document.querySelector("[data-team-search]");
+  const sort = document.querySelector("[data-team-sort]");
+  const empty = document.querySelector("[data-team-empty]");
+  const tabs = [...document.querySelectorAll("[data-filter]")];
+  let filter = "all";
+
+  function matchesFilter(p) {
+    if (filter === "all") return true;
+    if (filter === "admin" || filter === "member") return p.dataset.role === filter;
+    if (filter === "pending") return p.dataset.state === "pending" || p.dataset.state === "expired";
+    return p.dataset.state === filter;
+  }
+
+  function apply() {
+    const q = search.value.trim().toLowerCase();
+    let shown = 0;
+    people.forEach(p => {
+      const ok = matchesFilter(p) && (!q || p.dataset.search.includes(q));
+      p.hidden = !ok;
+      if (ok) shown++;
+    });
+    empty.hidden = shown > 0;
+  }
+
+  function reorder() {
+    const by = sort.value;
+    const num = (p, k) => parseFloat(p.dataset[k]) || 0;
+    const sorted = [...people].sort((a, b) => {
+      if (by === "name") return a.dataset.name.localeCompare(b.dataset.name);
+      if (by === "open") return num(b, "open") - num(a, "open");
+      if (by === "overdue") return num(b, "overdue") - num(a, "overdue");
+      if (by === "pct") return num(b, "pct") - num(a, "pct");
+      return num(a, "order") - num(b, "order");
+    });
+    sorted.forEach(p => list.append(p));
+  }
+
+  tabs.forEach(t => t.addEventListener("click", () => {
+    tabs.forEach(x => x.classList.toggle("on", x === t));
+    filter = t.dataset.filter;
+    apply();
+  }));
+  search.addEventListener("input", apply);
+  sort.addEventListener("change", reorder);
+
+  // Close any open "⋯" menu when clicking elsewhere.
+  document.addEventListener("click", e => {
+    document.querySelectorAll("details.menu[open]").forEach(d => { if (!d.contains(e.target)) d.open = false; });
+  });
+})();
+</script>
 {% endblock %}

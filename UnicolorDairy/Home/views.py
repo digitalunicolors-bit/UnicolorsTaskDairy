@@ -437,77 +437,100 @@ def report_csv(request):
 # ---------------------------------------------------------------- team management
 
 
+def _invite_status(user, now, expiry_hours):
+    if user.invite_accepted_at:
+        return "joined"
+    if not user.invite_sent_at:
+        return "none"
+    if now > user.invite_sent_at + timedelta(hours=expiry_hours):
+        return "expired"
+    return "pending"
+
+
 @admin_required
 def team(request):
     today = timezone.localdate()
-
-    users = list(
-        User.objects.all()
-    )
-
-    month_tasks = list(
-        Task.objects.filter(
-            due_date__year=today.year,
-            due_date__month=today.month
-        )
-    )
-
-    expiry_hours = getattr(
-        settings,
-        "INVITE_EXPIRY_HOURS",
-        72
-    )
-
     now = timezone.now()
+    expiry_hours = getattr(settings, "INVITE_EXPIRY_HOURS", 72)
+
+    users = list(User.objects.all())
+    month_tasks = list(Task.objects.filter(due_date__year=today.year, due_date__month=today.month))
+    open_tasks = list(Task.objects.exclude(status=S.DONE).only("assignee_id", "status", "due_date"))
+    with_tasks = set(Task.objects.values_list("assignee_id", flat=True).distinct())
 
     rows = []
-
+    counts = {"all": 0, "admin": 0, "member": 0, "pending": 0, "inactive": 0}
     for u in users:
-        summary = reports.summarize(
-            [
-                t for t in month_tasks
-                if t.assignee_id == u.id
-            ]
-        )
-
-        if u.invite_accepted_at:
-            invite_status = "joined"
-
-        elif not u.invite_sent_at:
-            invite_status = "none"
-
-        elif now > (
-            u.invite_sent_at
-            + timedelta(hours=expiry_hours)
-        ):
-            invite_status = "expired"
-
+        invite_status = _invite_status(u, now, expiry_hours)
+        if invite_status in ("pending", "expired"):
+            state = invite_status
+        elif not u.is_active:
+            state = "inactive"
         else:
-            invite_status = "pending"
+            state = "active"
+        mine = [t for t in open_tasks if t.assignee_id == u.id]
+        rows.append({
+            "user": u,
+            "summary": reports.summarize([t for t in month_tasks if t.assignee_id == u.id]),
+            "invite_status": invite_status,
+            "state": state,
+            "open": len(mine),
+            "review": sum(1 for t in mine if t.status == S.REVIEW),
+            "overdue": sum(1 for t in mine if t.due_date < today),
+            "has_tasks": u.id in with_tasks,
+        })
+        counts["all"] += 1
+        counts["admin" if u.is_admin else "member"] += 1
+        if state in ("pending", "expired"):
+            counts["pending"] += 1
+        elif state == "inactive":
+            counts["inactive"] += 1
 
-        rows.append(
-            (
-                u,
-                summary,
-                invite_status
-            )
-        )
+    rows.sort(key=lambda r: (r["state"] != "active", not r["user"].is_admin, r["user"].display_name.lower()))
+    return render(request, "tasks/team.html", {
+        "rows": rows,
+        "counts": counts,
+        "total_open": len(open_tasks),
+        "month": today,
+    })
 
-    rows.sort(
-        key=lambda r: (
-            not r[0].is_active,
-            not r[0].is_admin,
-            r[0].display_name.lower()
-        )
-    )
 
-    return render(
-        request,
-        "tasks/team.html",
-        {
-            "rows": rows
-        },
-    )
+@admin_required
+@require_POST
+def user_toggle_active(request, pk):
+    """Deactivate (block login) or reactivate a person."""
+    person = get_object_or_404(User, pk=pk)
+    if person == request.user:
+        messages.error(request, "You can't deactivate your own account.")
+        return redirect("team")
+    if person.invite_sent_at and not person.invite_accepted_at:
+        messages.error(request, f"{person.display_name} hasn't joined yet. Resend or cancel the invitation instead.")
+        return redirect("team")
+    person.is_active = not person.is_active
+    person.save(update_fields=["is_active"])
+    if person.is_active:
+        messages.success(request, f"{person.display_name} can log in again.")
+    else:
+        n = Task.objects.filter(assignee=person).exclude(status=S.DONE).count()
+        msg = f"{person.display_name} can no longer log in."
+        if n:
+            msg += f" They still have {n} open task{'s' if n != 1 else ''} — reassign or delete them."
+        messages.success(request, msg)
+    return redirect("team")
+
+
+@admin_required
+@require_POST
+def user_cancel_invite(request, pk):
+    """Remove someone who was invited but never joined (and has no tasks)."""
+    person = get_object_or_404(User, pk=pk)
+    if person == request.user or person.invite_accepted_at or Task.objects.filter(assignee=person).exists():
+        messages.error(request, "This invitation can't be cancelled because the person has joined or has tasks. Deactivate them instead.")
+        return redirect("team")
+    name, email = person.display_name, person.email
+    person.delete()
+    messages.success(request, f"Cancelled the invitation for {name}{f' ({email})' if email else ''}.")
+    return redirect("team")
 
 
 @admin_required

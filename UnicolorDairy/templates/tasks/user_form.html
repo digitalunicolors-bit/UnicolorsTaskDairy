@@ -1,8 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="narrow">
+  <a class="muted small back-link" href="{% url 'team' %}">← Back to team</a>
   <div class="panel">
     <h2>{{ title }}</h2>
+
+    {% if person %}
+      <div class="form-person">
+        <span class="avatar {% if person.is_admin %}is-admin{% endif %}">{{ person.initials }}</span>
+        <div>
+          <b>{{ person.display_name }}</b>
+          <div class="muted small">@{{ person.username }}{% if person.last_login %} · last seen {{ person.last_login|timesince }} ago{% endif %}</div>
+        </div>
+      </div>
+    {% elif not form.password %}
+      <p class="muted small">They'll get an email invitation to set their own password and join the workspace.</p>
+    {% endif %}
+
     <form method="post" class="stack">
       {% csrf_token %}
       {% for e in form.non_field_errors %}<div class="err">{{ e }}</div>{% endfor %}
@@ -15,7 +29,13 @@
         {% if field.help_text %}<div class="muted small">{{ field.help_text }}</div>{% endif %}
         {% for e in field.errors %}<div class="err">{{ e }}</div>{% endfor %}
       {% endfor %}
-      <div class="row"><button class="primary" type="submit">Save</button><a class="btn" href="{% url 'team' %}">Cancel</a></div>
+      <div class="row">
+        <button class="primary" type="submit">{% if person %}Save changes{% elif form.password %}Set password{% else %}Send invitation{% endif %}</button>
+        <a class="btn" href="{% url 'team' %}">Cancel</a>
+        {% if person and person.invite_accepted_at or person and not person.invite_sent_at %}
+          <a class="btn form-side-link" href="{% url 'user_password' person.pk %}">🔑 Reset password</a>
+        {% endif %}
+      </div>
     </form>
   </div>
 </div>
