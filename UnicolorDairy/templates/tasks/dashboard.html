@@ -67,6 +67,7 @@
       {% for m in members %}<option value="{{ m.id }}" {% if member_id == m.id|stringformat:'s' %}selected{% endif %}>{{ m.display_name }}</option>{% endfor %}
     </select>
   </label>
+  <a class="btn clear-btn {% if show == 'today' and member_id == 'all' %}is-default{% endif %}" href="{% url 'dashboard' %}" title="Back to today, everyone">✕ Clear filters</a>
   <noscript><button class="sm">Apply</button></noscript>
 </form>
 <p class="muted small" style="margin:-4px 0 12px">
