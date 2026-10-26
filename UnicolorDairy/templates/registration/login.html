@@ -1,26 +1,114 @@
 {% extends "base.html" %}
 {% block title %}Log in · Unicolors Daily Tasks{% endblock %}
 {% block content %}
-<div class="narrow">
-  <div class="panel">
-    <h2>Log in</h2>
-    {% if form.errors %}<div class="banner error">Wrong username/email or password. Please try again.</div>{% endif %}
-    <form method="post" class="stack">
-      {% csrf_token %}
-      <label>Username or email<input name="username" autocomplete="username" required autofocus value="{{ form.username.value|default:'' }}"></label>
-      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
-      <input type="hidden" name="next" value="{{ next }}">
-      <div style="margin-top:14px; text-align:right;">
-    <a
-        href="{% url 'password_reset' %}"
-        class="link"
-    >
-        Forgot password?
-    </a>
-</div>
-      <button class="primary" type="submit">Log in</button>
-    </form>
-    <p class="muted small">Don't have a login? Ask your admin to create one for you.</p>
+<div class="auth">
+  <div class="auth-card">
+
+    {# ---------- brand side ---------- #}
+    <aside class="auth-brand">
+      <div class="auth-rainbow" aria-hidden="true"></div>
+      <div class="auth-logo"><span>Unicolors</span> Daily Tasks</div>
+      <p class="auth-tagline">Assign, track and complete the team's daily work — all in one place.</p>
+      <ul class="auth-points">
+        <li><span aria-hidden="true">📋</span> See today's tasks and deadlines at a glance</li>
+        <li><span aria-hidden="true">💬</span> Comment and @tag teammates on any task</li>
+        <li><span aria-hidden="true">⏰</span> Get reminders before things are due</li>
+      </ul>
+      <p class="auth-foot">© {% now "Y" %} Unicolors Pvt Ltd</p>
+    </aside>
+
+    {# ---------- form side ---------- #}
+    <section class="auth-form">
+      <h2>Welcome back</h2>
+      <p class="muted">Log in to your workspace.</p>
+
+      {% if form.errors %}
+        <div class="banner error" role="alert">
+          {% if form.non_field_errors %}
+            The username/email or password is incorrect. Please check and try again.
+          {% else %}
+            Please fill in both fields.
+          {% endif %}
+        </div>
+      {% endif %}
+
+      <form method="post" class="stack" id="loginForm" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+
+        <label for="id_username">Username or email
+          <span class="auth-input">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+            <input id="id_username" name="username" autocomplete="username" required autofocus
+                   autocapitalize="none" spellcheck="false"
+                   placeholder="e.g. niyati or niyati@unicolors.in"
+                   value="{{ form.username.value|default:'' }}">
+          </span>
+        </label>
+
+        <label for="id_password">
+          <span class="auth-label-row">Password
+            <a class="link auth-forgot" href="{% url 'password_reset' %}">Forgot password?</a>
+          </span>
+          <span class="auth-input">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            <input id="id_password" type="password" name="password" autocomplete="current-password" required placeholder="Your password">
+            <button type="button" class="auth-eye" data-toggle-password aria-label="Show password" title="Show password">Show</button>
+          </span>
+          <span class="auth-caps" data-caps hidden>⚠ Caps Lock is on</span>
+        </label>
+
+        <button class="primary auth-submit" type="submit" data-submit>Log in</button>
+      </form>
+
+      <div class="auth-help">
+        <p class="muted small">New to the team? You'll get an email invitation from your admin to set up your account.</p>
+        <p class="muted small">Trouble logging in? Ask your admin to reset your password.</p>
+      </div>
+    </section>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const form = document.getElementById("loginForm");
+  if (!form) return;
+  const pwd = form.querySelector("#id_password");
+  const user = form.querySelector("#id_username");
+  const eye = form.querySelector("[data-toggle-password]");
+  const caps = form.querySelector("[data-caps]");
+  const btn = form.querySelector("[data-submit]");
+
+  // Show / hide password
+  eye.addEventListener("click", () => {
+    const show = pwd.type === "password";
+    pwd.type = show ? "text" : "password";
+    eye.textContent = show ? "Hide" : "Show";
+    eye.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    pwd.focus();
+  });
+
+  // Caps Lock warning
+  ["keydown", "keyup"].forEach(evt => pwd.addEventListener(evt, e => {
+    if (e.getModifierState) caps.hidden = !e.getModifierState("CapsLock");
+  }));
+  pwd.addEventListener("blur", () => { caps.hidden = true; });
+
+  // If the username is already filled (after a wrong password), jump to the password box
+  if (user.value) pwd.focus();
+
+  // Friendly check + "Signing in…" so it can't be clicked twice
+  form.addEventListener("submit", e => {
+    if (!user.value.trim() || !pwd.value) {
+      e.preventDefault();
+      (user.value.trim() ? pwd : user).focus();
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Signing in…";
+  });
+})();
+</script>
 {% endblock %}
