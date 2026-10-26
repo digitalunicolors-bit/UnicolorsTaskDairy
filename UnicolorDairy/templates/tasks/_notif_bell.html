@@ -1,0 +1,68 @@
+{% if show %}
+<div class="notif" id="notifBell" data-count-url="{% url 'notifications_count' %}">
+  <button type="button" class="notif-btn" aria-label="Notifications" aria-expanded="false" data-notif-toggle>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+    </svg>
+    <span class="notif-badge" data-notif-badge {% if not unread %}hidden{% endif %}>{% if unread > 99 %}99+{% else %}{{ unread }}{% endif %}</span>
+  </button>
+
+  <div class="notif-panel" data-notif-panel hidden>
+    <div class="notif-head">
+      <b>Notifications</b>
+      <span class="muted small">{{ unread }} unread</span>
+      {% if unread %}
+        <form method="post" action="{% url 'notifications_read_all' %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="sm">Mark all read</button>
+        </form>
+      {% endif %}
+    </div>
+    <div class="notif-scroll">
+      {% for n in latest %}
+        <a class="notif-item {% if not n.is_read %}unread{% endif %}" href="{% url 'notification_open' n.pk %}">
+          <span class="notif-ico">{{ n.icon }}</span>
+          <span class="notif-txt">{{ n.message }}<small>{{ n.created_at|timesince }} ago</small></span>
+          {% if not n.is_read %}<span class="notif-dot" aria-label="Unread"></span>{% endif %}
+        </a>
+      {% empty %}
+        <div class="empty">No notifications yet</div>
+      {% endfor %}
+    </div>
+    <a class="notif-all" href="{% url 'notification_list' %}">View all notifications</a>
+  </div>
+</div>
+<script>
+(function () {
+  const root = document.getElementById("notifBell");
+  if (!root) return;
+  const btn = root.querySelector("[data-notif-toggle]");
+  const panel = root.querySelector("[data-notif-panel]");
+  const badge = root.querySelector("[data-notif-badge]");
+
+  function setOpen(open) {
+    panel.hidden = !open;
+    btn.setAttribute("aria-expanded", open);
+  }
+  btn.addEventListener("click", e => { e.stopPropagation(); setOpen(panel.hidden); });
+  document.addEventListener("click", e => { if (!root.contains(e.target)) setOpen(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") setOpen(false); });
+
+  // Check for new notifications every 30 seconds.
+  let last = parseInt(badge.textContent, 10) || 0;
+  async function refresh() {
+    try {
+      const r = await fetch(root.dataset.countUrl, { headers: { "X-Requested-With": "fetch" } });
+      if (!r.ok) return;
+      const { unread } = await r.json();
+      badge.textContent = unread > 99 ? "99+" : unread;
+      badge.hidden = !unread;
+      if (unread > last) badge.classList.add("bump");
+      setTimeout(() => badge.classList.remove("bump"), 600);
+      last = unread;
+    } catch (e) { /* offline – try again later */ }
+  }
+  setInterval(refresh, 30000);
+})();
+</script>
+{% endif %}

@@ -1,3 +1,4 @@
+{% load notiftags %}
 {% load static %}<!doctype html>
 <html lang="en">
 <head>
@@ -20,6 +21,7 @@
     </div>
     {% if user.is_authenticated %}
     <div class="who">
+      {% notif_bell %}
       <span class="avatar sm">{{ user.initials }}</span>
       <span class="who-name">{{ user.display_name }}</span>
       <a href="{% url 'password_change' %}" class="link">Change password</a>

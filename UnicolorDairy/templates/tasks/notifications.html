@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+  <div class="row-between">
+    <h2>Notifications <small>{{ counts.unread }} unread</small></h2>
+    {% if counts.unread %}
+      <form method="post" action="{% url 'notifications_read_all' %}">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="sm">Mark all as read</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="tabs notif-tabs">
+    <a class="tab {% if filter == 'all' %}on{% endif %}" href="?filter=all">All <span class="notif-count">{{ counts.all }}</span></a>
+    <a class="tab {% if filter == 'unread' %}on{% endif %}" href="?filter=unread">Unread <span class="notif-count">{{ counts.unread }}</span></a>
+    <a class="tab {% if filter == 'read' %}on{% endif %}" href="?filter=read">Read <span class="notif-count">{{ counts.read }}</span></a>
+  </div>
+
+  {% for n in page %}
+    <div class="notif-row {% if not n.is_read %}unread{% endif %}">
+      <span class="notif-ico">{{ n.icon }}</span>
+      <a class="notif-txt grow" href="{% url 'notification_open' n.pk %}">
+        {{ n.message }}
+        <small>{{ n.created_at|date:"j M Y, g:i A" }} · {{ n.created_at|timesince }} ago</small>
+      </a>
+      <form method="post" action="{% url 'notification_toggle' n.pk %}">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="sm">{% if n.is_read %}Mark unread{% else %}Mark read{% endif %}</button>
+      </form>
+    </div>
+  {% empty %}
+    <div class="empty">
+      {% if filter == 'unread' %}You're all caught up — no unread notifications.
+      {% elif filter == 'read' %}No read notifications yet.
+      {% else %}No notifications yet.{% endif %}
+    </div>
+  {% endfor %}
+
+  {% if page.has_other_pages %}
+    <div class="row notif-pages">
+      {% if page.has_previous %}<a class="btn sm" href="?filter={{ filter }}&page={{ page.previous_page_number }}">← Newer</a>{% endif %}
+      <span class="muted small">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}<a class="btn sm" href="?filter={{ filter }}&page={{ page.next_page_number }}">Older →</a>{% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

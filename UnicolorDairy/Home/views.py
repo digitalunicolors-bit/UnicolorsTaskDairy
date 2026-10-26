@@ -8,8 +8,10 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.core.files.base import ContentFile
-from django.http import FileResponse, Http404, HttpResponse
+from django.core.paginator import Paginator
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.utils.encoding import force_str
@@ -23,7 +25,7 @@ from .forms import (
     UserEditForm,
     AcceptInviteForm,
 )
-from .models import Task, TaskActivity, TaskAttachment, User
+from .models import Notification, Task, TaskActivity, TaskAttachment, User
 
 S = Task.Status
 
@@ -74,6 +76,14 @@ def _stats(tasks):
 
 def _log(task, user, action, note=""):
     TaskActivity.objects.create(task=task, actor=user, action=action, note=note)
+
+
+def _safe_next(request, default):
+    """Only allow redirects back to a page on this site."""
+    back = request.POST.get("next") or request.GET.get("next") or ""
+    if not back.startswith("/") or back.startswith("//"):
+        return default
+    return back
 
 
 # ---------------------------------------------------------------- home
@@ -171,6 +181,7 @@ def assign_task(request):
                 att = TaskAttachment(task=task, kind=kind, original_name=name[:255], size=len(content), uploaded_by=request.user)
                 att.file.save(name, ContentFile(content), save=True)
             _log(task, request.user, TaskActivity.Action.ASSIGNED)
+            Notification.send(task, request.user, "assigned", recipients=[user])
             transaction.on_commit(lambda t=task: notifications.task_assigned(t, request.user))
     names = ", ".join(u.display_name for u in data["assignees"])
     messages.success(request, f'"{data["title"]}" assigned to {names}.')
@@ -204,17 +215,20 @@ def task_action(request, pk, action):
         task.status, task.started_at = S.PROGRESS, now
         task.save()
         _log(task, user, TaskActivity.Action.STARTED)
+        Notification.send(task, user, "started")
     elif action == "submit" and task.status in (S.TODO, S.PROGRESS, S.CHANGE):
         task.status, task.submitted_at, task.member_note = S.REVIEW, now, note
         task.started_at = task.started_at or now
         task.save()
         _log(task, user, TaskActivity.Action.SUBMITTED, note)
+        Notification.send(task, user, "submitted", note)
         notifications.task_submitted(task, user)
         messages.success(request, "Submitted for approval.")
     elif action == "approve" and task.status == S.REVIEW:
         task.status, task.done_at, task.approved_by, task.admin_note = S.DONE, now, user, ""
         task.save()
         _log(task, user, TaskActivity.Action.APPROVED)
+        Notification.send(task, user, "approved")
         notifications.task_approved(task, user)
         messages.success(request, f'Approved "{task.title}".')
     elif action in ("changes", "reopen") and task.status in (S.REVIEW, S.DONE):
@@ -226,10 +240,12 @@ def task_action(request, pk, action):
         task.change_count += 1
         task.save()
         _log(task, user, TaskActivity.Action.REOPENED if reopened else TaskActivity.Action.CHANGES, note)
+        Notification.send(task, user, "reopened" if reopened else "changes", note)
         notifications.task_changes(task, user)
         messages.success(request, "Change request sent.")
     elif action == "delete":
         title = task.title
+        Notification.send(task, user, "deleted")
         task.delete()
         messages.success(request, f'Deleted "{title}".')
     else:
@@ -647,3 +663,63 @@ def resend_all_invites(request):
     )
 
     return redirect("team")
+
+
+# ---------------------------------------------------------------- notifications
+
+
+@login_required
+def notification_list(request):
+    show = request.GET.get("filter", "all")
+    base = request.user.notifications.select_related("actor")
+    total = base.count()
+    unread = base.filter(is_read=False).count()
+    counts = {"all": total, "unread": unread, "read": total - unread}
+    if show == "unread":
+        qs = base.filter(is_read=False)
+    elif show == "read":
+        qs = base.filter(is_read=True)
+    else:
+        show, qs = "all", base
+    page = Paginator(qs, 30).get_page(request.GET.get("page"))
+    return render(request, "tasks/notifications.html", {"page": page, "filter": show, "counts": counts})
+
+
+@login_required
+def notification_open(request, pk):
+    """Mark as read, then jump to the task on the board."""
+    n = get_object_or_404(Notification.objects.select_related("task"), pk=pk, recipient=request.user)
+    if not n.is_read:
+        n.is_read = True
+        n.save(update_fields=["is_read"])
+    t = n.task
+    if t is None:  # task was deleted
+        return redirect("notification_list")
+    if request.user.is_admin:
+        url = reverse("dashboard") + f"?show=custom&mode=single&date={t.due_date:%Y-%m-%d}"
+    else:
+        url = reverse("my_tasks") + "?show=all"
+    return redirect(f"{url}#task-{t.pk}")
+
+
+@login_required
+@require_POST
+def notification_toggle(request, pk):
+    n = get_object_or_404(Notification, pk=pk, recipient=request.user)
+    n.is_read = not n.is_read
+    n.save(update_fields=["is_read"])
+    return redirect(_safe_next(request, "notification_list"))
+
+
+@login_required
+@require_POST
+def notifications_read_all(request):
+    count = request.user.notifications.filter(is_read=False).update(is_read=True)
+    if count:
+        messages.success(request, f"Marked {count} notification{'s' if count != 1 else ''} as read.")
+    return redirect(_safe_next(request, "notification_list"))
+
+
+@login_required
+def notifications_count(request):
+    return JsonResponse({"unread": request.user.notifications.filter(is_read=False).count()})
