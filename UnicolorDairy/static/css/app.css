@@ -1323,3 +1323,233 @@ td.tot {
     color: var(--muted);
     border-color: var(--line)
 }
+
+/* task detail pop-up */
+.card {
+    cursor: pointer
+}
+
+.card:hover {
+    border-color: color-mix(in srgb, var(--c-prog) 45%, var(--line))
+}
+
+.modal {
+    width: min(720px, calc(100vw - 24px));
+    max-height: calc(100vh - 40px);
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .4)
+}
+
+.modal::backdrop {
+    background: rgba(0, 0, 0, .55);
+    backdrop-filter: blur(2px)
+}
+
+.modal[open] {
+    animation: pop .16s ease-out
+}
+
+@keyframes pop {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(.98)
+    }
+}
+
+.modal-inner {
+    padding: 20px 22px 18px
+}
+
+.td section {
+    margin-top: 18px
+}
+
+.td h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .05em
+}
+
+.td-head {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start
+}
+
+.td-head-text {
+    flex: 1;
+    min-width: 0
+}
+
+.td-head h2 {
+    margin: 10px 0 0;
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -.01em;
+    word-break: break-word
+}
+
+.td-close {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 14px
+}
+
+.td-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    margin-top: 16px
+}
+
+.td-grid>div {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 9px 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0
+}
+
+.td-grid small {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .04em
+}
+
+.td-grid b {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13.5px;
+    word-break: break-word
+}
+
+.td-text {
+    font-size: 14px;
+    line-height: 1.6;
+    word-break: break-word
+}
+
+.td-text a,
+.note a,
+.td-act-note a {
+    color: var(--c-prog);
+    text-decoration: underline
+}
+
+.td-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px
+}
+
+.td-files .att {
+    flex: 1 1 100%
+}
+
+.td-img {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 150px;
+    font-size: 11.5px;
+    color: var(--muted)
+}
+
+.td-img img {
+    width: 150px;
+    height: 110px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface2)
+}
+
+.td-img:hover img {
+    border-color: var(--c-prog)
+}
+
+.td-timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 14px;
+    border-left: 2px solid var(--line)
+}
+
+.td-timeline li {
+    position: relative;
+    padding: 0 0 12px 10px;
+    font-size: 13px
+}
+
+.td-timeline li::before {
+    content: "";
+    position: absolute;
+    left: -21px;
+    top: 4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--c-todo);
+    border: 2px solid var(--surface)
+}
+
+.td-timeline li.tl-started::before {
+    background: var(--c-prog)
+}
+
+.td-timeline li.tl-submitted::before {
+    background: var(--c-review)
+}
+
+.td-timeline li.tl-approved::before {
+    background: var(--c-done)
+}
+
+.td-timeline li.tl-changes::before,
+.td-timeline li.tl-reopened::before {
+    background: var(--c-change)
+}
+
+.td-act-note {
+    margin-top: 4px;
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: var(--surface2);
+    font-size: 12.5px;
+    word-break: break-word
+}
+
+.td-actions {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line)
+}
+
+.td-close-btn {
+    margin-left: auto
+}
+
+@media (max-width:560px) {
+    .modal-inner {
+        padding: 16px
+    }
+
+    .td-head h2 {
+        font-size: 18px
+    }
+}

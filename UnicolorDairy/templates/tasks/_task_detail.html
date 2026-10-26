@@ -1,0 +1,122 @@
+{# Pop-up with the full details of one task. Loaded into the modal on the board. #}
+<div class="td">
+  <div class="td-head">
+    <div class="td-head-text">
+      <div class="row">
+        <span class="st s-{{ t.status }}">{{ t.get_status_display }}</span>
+        <span class="pill p-{{ t.priority }}">{{ t.get_priority_display }} priority</span>
+        {% if t.is_late %}<span class="pill late">Overdue</span>{% elif t.finished_late %}<span class="pill late">Finished late</span>{% endif %}
+      </div>
+      <h2>{{ t.title }}</h2>
+    </div>
+    <button type="button" class="td-close" data-close aria-label="Close">✕</button>
+  </div>
+
+  <div class="td-grid">
+    <div><small>Assigned to</small><b><span class="avatar xs">{{ t.assignee.initials }}</span>{{ t.assignee.display_name }}</b>{% if t.assignee.designation %}<span class="muted small">{{ t.assignee.designation }}</span>{% endif %}</div>
+    <div><small>Assigned by</small><b>{{ t.assigned_by.display_name|default:"—" }}</b></div>
+    <div><small>Due date</small><b class="{% if t.is_late %}red{% endif %}">{{ t.due_date|date:"D, j M Y" }}</b></div>
+    <div><small>Created</small><b>{{ t.created_at|date:"j M Y, g:i A" }}</b></div>
+    <div><small>Started</small><b>{{ t.started_at|date:"j M Y, g:i A"|default:"Not started" }}</b></div>
+    <div><small>Submitted</small><b>{{ t.submitted_at|date:"j M Y, g:i A"|default:"—" }}</b></div>
+    <div><small>Approved</small><b>{% if t.done_at %}{{ t.done_at|date:"j M Y, g:i A" }}{% if t.approved_by %} · {{ t.approved_by.display_name }}{% endif %}{% else %}—{% endif %}</b></div>
+    <div><small>Change requests</small><b>{{ t.change_count }}</b></div>
+  </div>
+
+  <section>
+    <h3>Brief</h3>
+    {% if t.details %}<div class="td-text">{{ t.details|urlize|linebreaksbr }}</div>{% else %}<p class="muted">No details were added.</p>{% endif %}
+  </section>
+
+  {% with atts=t.attachments.all %}{% if atts %}
+  <section>
+    <h3>Files <span class="muted">({{ atts|length }})</span></h3>
+    <div class="td-files">
+      {% for a in atts %}
+        {% if a.kind == "voice" %}
+          <div class="att voice"><span class="small">🎙 Voice note</span><audio controls preload="none" src="{% url 'attachment' a.pk %}"></audio></div>
+        {% elif a.is_image %}
+          <a class="td-img" href="{% url 'attachment' a.pk %}" target="_blank" rel="noopener" title="{{ a.original_name }}">
+            <img src="{% url 'attachment' a.pk %}" alt="{{ a.original_name }}" loading="lazy">
+            <span>{{ a.original_name|truncatechars:28 }} · {{ a.size_label }}</span>
+          </a>
+        {% else %}
+          <a class="att" href="{% url 'attachment' a.pk %}" target="_blank" rel="noopener">📎 {{ a.original_name }} <span class="muted">{{ a.size_label }}</span></a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}{% endwith %}
+
+  {% if t.admin_note and t.status == "change" %}
+  <section>
+    <h3>Changes requested</h3>
+    <div class="note change">{{ t.admin_note|urlize|linebreaksbr }}</div>
+  </section>
+  {% endif %}
+
+  {% if t.member_note %}
+  <section>
+    <h3>{% if t.assignee_id == user.id %}Your note{% else %}{{ t.assignee.display_name }}'s note{% endif %}</h3>
+    <div class="note upd">{{ t.member_note|urlize|linebreaksbr }}</div>
+  </section>
+  {% endif %}
+
+  <section>
+    <h3>Activity</h3>
+    {% if activity %}
+    <ol class="td-timeline">
+      {% for a in activity %}
+        <li class="tl-{{ a.action }}">
+          <div><b>{{ a.actor.display_name|default:"Someone" }}</b> {{ a.get_action_display|lower }}</div>
+          <small class="muted">{{ a.created_at|date:"j M Y, g:i A" }} · {{ a.created_at|timesince }} ago</small>
+          {% if a.note %}<div class="td-act-note">{{ a.note|urlize|linebreaksbr }}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+    {% else %}<p class="muted">No activity yet.</p>{% endif %}
+  </section>
+
+  <div class="actions td-actions">
+    {% if t.assignee_id == user.id %}
+      {% if t.status == "todo" %}
+        <form method="post" action="{% url 'task_action' t.pk 'start' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ next }}"><button class="sm">Start</button></form>
+      {% endif %}
+      {% if t.status == "todo" or t.status == "progress" or t.status == "change" %}
+        <details class="inline">
+          <summary class="btn sm primary">Mark complete</summary>
+          <form method="post" action="{% url 'task_action' t.pk 'submit' %}">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+            <textarea name="note" rows="2" maxlength="1000" placeholder="Optional: what you did, file link…"></textarea>
+            <button class="sm primary">Submit for approval</button>
+          </form>
+        </details>
+      {% endif %}
+    {% endif %}
+
+    {% if admin_view %}
+      {% if t.status == "review" %}
+        <form method="post" action="{% url 'task_action' t.pk 'approve' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ next }}"><button class="sm ok">Approve</button></form>
+      {% endif %}
+      {% if t.status == "review" or t.status == "done" %}
+        <details class="inline">
+          <summary class="btn sm warn">{% if t.status == "done" %}Reopen{% else %}Request changes{% endif %}</summary>
+          <form method="post" action="{% url 'task_action' t.pk 'changes' %}">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+            <textarea name="note" rows="2" maxlength="1000" required placeholder="What needs to change?"></textarea>
+            <button class="sm warn">Send</button>
+          </form>
+        </details>
+      {% endif %}
+      <details class="inline">
+        <summary class="btn sm danger">Delete</summary>
+        <form method="post" action="{% url 'task_action' t.pk 'delete' %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ next }}">
+          <span class="small">Delete this task permanently?</span>
+          <button class="sm danger">Yes, delete</button>
+        </form>
+      </details>
+    {% endif %}
+    <button type="button" class="sm td-close-btn" data-close>Close</button>
+  </div>
+</div>

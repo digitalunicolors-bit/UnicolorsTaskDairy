@@ -254,6 +254,25 @@ def task_action(request, pk, action):
 
 
 @login_required
+def task_detail(request, pk):
+    """Full details of one task, shown in the pop-up on the board."""
+    task = get_object_or_404(
+        Task.objects.select_related("assignee", "assigned_by", "approved_by").prefetch_related("attachments"), pk=pk
+    )
+    if not (request.user.is_admin or task.assignee_id == request.user.id):
+        raise PermissionDenied
+    back = request.GET.get("next", "")
+    if not back.startswith("/") or back.startswith("//"):
+        back = reverse("home")
+    return render(request, "tasks/_task_detail.html", {
+        "t": task,
+        "activity": list(task.activity.select_related("actor")),
+        "next": back,
+        "admin_view": request.user.is_admin,
+    })
+
+
+@login_required
 def attachment(request, pk):
     """Serve a task file only to the person it's assigned to, and to admins."""
     att = get_object_or_404(TaskAttachment.objects.select_related("task"), pk=pk)

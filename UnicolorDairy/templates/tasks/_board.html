@@ -20,6 +20,11 @@
   {% endfor %}
 </div>
 
+{# Pop-up for full task details #}
+<dialog class="modal" id="taskModal" data-url="{% url 'task_detail' 0 %}" aria-label="Task details">
+  <div class="modal-inner" data-modal-body></div>
+</dialog>
+
 {# Hidden form used when a card is dropped in a new column #}
 <form method="post" id="moveForm" data-url="{% url 'task_action' 0 'ACTION' %}" hidden>
   {% csrf_token %}
@@ -128,5 +133,46 @@
       if (dragged) move(dragged, col);
     });
   });
+})();
+</script>
+
+<script>
+// Click a card to see its full details.
+(function () {
+  const dlg = document.getElementById("taskModal");
+  if (!dlg) return;
+  const body = dlg.querySelector("[data-modal-body]");
+
+  async function openTask(id) {
+    body.innerHTML = '<div class="empty">Loading…</div>';
+    if (!dlg.open) dlg.showModal();
+    try {
+      const url = dlg.dataset.url.replace("/0/", "/" + id + "/") + "?next=" + encodeURIComponent(location.pathname + location.search);
+      const r = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
+      if (!r.ok) throw new Error(r.status);
+      body.innerHTML = await r.text();
+    } catch (e) {
+      body.innerHTML = '<div class="empty">Couldn\'t load this task. Please refresh the page and try again.</div>' +
+        '<div class="actions"><button type="button" class="sm" data-close>Close</button></div>';
+    }
+  }
+
+  document.querySelectorAll(".board .card").forEach(card => {
+    card.addEventListener("click", e => {
+      // Buttons, links, note boxes and audio on the card keep working as before.
+      if (e.target.closest("a, button, form, details, summary, audio, textarea, input, select")) return;
+      if (String(window.getSelection())) return;   // user was selecting text
+      openTask(card.dataset.id);
+    });
+  });
+
+  dlg.addEventListener("click", e => {
+    if (e.target === dlg || e.target.closest("[data-close]")) dlg.close();   // backdrop or close button
+  });
+  dlg.addEventListener("close", () => body.querySelectorAll("audio").forEach(a => a.pause()));
+
+  // Opened from a notification link (…#task-12): show that task straight away.
+  const m = location.hash.match(/^#task-(\d+)$/);
+  if (m && document.getElementById("task-" + m[1])) openTask(m[1]);
 })();
 </script>

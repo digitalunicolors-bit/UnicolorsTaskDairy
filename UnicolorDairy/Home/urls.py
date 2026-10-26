@@ -6,6 +6,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("dashboard/", views.dashboard, name="dashboard"),
     path("tasks/assign/", views.assign_task, name="assign_task"),
+    path("task/<int:pk>/", views.task_detail, name="task_detail"),
     path("tasks/<int:pk>/<str:action>/", views.task_action, name="task_action"),
     path("my-tasks/", views.my_tasks, name="my_tasks"),
     path("files/<int:pk>/", views.attachment, name="attachment"),
@@ -25,5 +26,4 @@ urlpatterns = [
     path("notifications/read-all/", views.notifications_read_all, name="notifications_read_all"),
     path("notifications/<int:pk>/open/", views.notification_open, name="notification_open"),
     path("notifications/<int:pk>/toggle/", views.notification_toggle, name="notification_toggle"),
-
 ]
