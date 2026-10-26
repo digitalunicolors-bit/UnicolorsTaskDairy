@@ -27,6 +27,7 @@ from .forms import (
     UserEditForm,
     AcceptInviteForm,
     RecurringTaskForm,
+    TaskEditForm,
 )
 from .models import (
     Notification, RecurringTask, Task, TaskActivity, TaskAttachment, TaskComment, User,
@@ -116,6 +117,14 @@ def home(request):
 # ---------------------------------------------------------------- admin dashboard
 
 
+DASHBOARD_LISTS = {
+    "open": "all open tasks",
+    "review": "all tasks waiting for approval",
+    "overdue": "all overdue tasks",
+    "changes": "all tasks with changes requested",
+}
+
+
 @admin_required
 def dashboard(request):
     today = timezone.localdate()
@@ -124,8 +133,11 @@ def dashboard(request):
     member_id = request.GET.get("member", "all")
     day = _parse_date(request.GET.get("date"), today)
 
-    # Work out which dates to show
-    if show == "week":
+    # Work out which dates (or which status list) to show
+    if show in DASHBOARD_LISTS:
+        mode = "list"
+        start = end = today
+    elif show == "week":
         start, end, mode = today - timedelta(days=6), today, "range"
     elif show == "month":
         first = today.replace(day=1)
@@ -151,7 +163,15 @@ def dashboard(request):
     if member_id != "all":
         qs = qs.filter(assignee_id=member_id)
 
-    if mode == "single":
+    if show == "open":
+        tasks = list(qs.exclude(status=S.DONE))
+    elif show == "review":
+        tasks = list(qs.filter(status=S.REVIEW))
+    elif show == "overdue":
+        tasks = list(qs.filter(status__in=NEEDS_WORK, due_date__lt=today))
+    elif show == "changes":
+        tasks = list(qs.filter(status=S.CHANGE))
+    elif mode == "single":
         # One day: tasks due that day, plus anything waiting for approval.
         # For today, also include older tasks that are still not done.
         tasks = list(qs.exclude(status=S.DONE).filter(due_date__lt=start)) if start == today else []
@@ -161,6 +181,32 @@ def dashboard(request):
     else:
         tasks = list(qs.filter(due_date__range=(start, end)))
 
+    # ---- "Needs your attention" (whole team, not affected by the filters)
+    open_all = list(Task.objects.exclude(status=S.DONE).only("status", "due_date", "assignee_id"))
+    focus = {
+        "review": sum(1 for t in open_all if t.status == S.REVIEW),
+        "overdue": sum(1 for t in open_all if t.status in NEEDS_WORK and t.due_date < today),
+        "today": sum(1 for t in open_all if t.status in NEEDS_WORK and t.due_date == today),
+        "changes": sum(1 for t in open_all if t.status == S.CHANGE),
+        "open": len(open_all),
+    }
+    queue = list(
+        Task.objects.filter(status=S.REVIEW).select_related("assignee").order_by("submitted_at", "due_date")[:6]
+    )
+    members = list(User.objects.filter(is_active=True))
+    workload = []
+    for u in members:
+        mine = [t for t in open_all if t.assignee_id == u.id]
+        if mine or not u.is_admin:
+            workload.append({
+                "user": u,
+                "open": len(mine),
+                "overdue": sum(1 for t in mine if t.status in NEEDS_WORK and t.due_date < today),
+            })
+    workload.sort(key=lambda w: (-w["open"], w["user"].display_name.lower()))
+    now = timezone.localtime()
+    greeting = "Good morning" if now.hour < 12 else "Good afternoon" if now.hour < 17 else "Good evening"
+
     form = AssignTaskForm()
     return render(request, "tasks/dashboard.html", {
         "form": form,
@@ -168,11 +214,17 @@ def dashboard(request):
         "stats": _stats(tasks),
         "show": show,
         "mode": mode,
+        "list_label": DASHBOARD_LISTS.get(show, ""),
         "day": start,
         "start": start,
         "end": end,
+        "today": today,
         "member_id": member_id,
-        "members": User.objects.filter(is_active=True),
+        "members": members,
+        "focus": focus,
+        "queue": queue,
+        "workload": workload,
+        "greeting": greeting,
         "mention_people": _mention_people(),
         "is_admin_view": True,
         "max_upload_mb": getattr(settings, "MAX_UPLOAD_MB", 20),
@@ -298,6 +350,68 @@ def task_detail(request, pk):
         "people": _mention_people(),
         "next": back,
         "admin_view": request.user.is_admin,
+    })
+
+
+@admin_required
+def task_edit(request, pk):
+    """Edit a task after it was assigned (shown inside the pop-up)."""
+    task = get_object_or_404(Task.objects.select_related("assignee"), pk=pk)
+    before = Task.objects.select_related("assignee").get(pk=pk)  # untouched copy, to describe what changed
+    back = _safe_next(request, reverse("dashboard"))
+    form = TaskEditForm(request.POST or None, instance=task)
+
+    if request.method == "POST":
+        if not form.is_valid():
+            for errors in form.errors.values():
+                for e in errors:
+                    messages.error(request, e)
+            return redirect(back)
+        if not form.has_changed():
+            messages.info(request, "Nothing was changed.")
+            return redirect(back)
+
+        task = form.save()
+        changes = []
+        for f in form.changed_data:
+            if f == "title":
+                changes.append(f"Title “{before.title}” → “{task.title}”")
+            elif f == "priority":
+                changes.append(f"Priority {before.get_priority_display()} → {task.get_priority_display()}")
+            elif f == "due_date":
+                changes.append(f"Due date {before.due_date:%d %b} → {task.due_date:%d %b}")
+            elif f == "assignee":
+                changes.append(f"Reassigned {before.assignee.display_name} → {task.assignee.display_name}")
+            elif f == "details":
+                changes.append("Brief updated")
+        note = "; ".join(changes)
+        _log(task, request.user, TaskActivity.Action.EDITED, note)
+
+        reassigned = before.assignee_id != task.assignee_id
+        if reassigned:
+            Notification.send(task, request.user, "assigned", recipients=[task.assignee])
+            transaction.on_commit(lambda: notifications.task_assigned(task, request.user))
+            others = [before.assignee, *active_admins()]
+        else:
+            others = [task.assignee, *active_admins()]
+        Notification.send(task, request.user, "edited", note, recipients=others)
+
+        if "details" in form.changed_data:
+            already = {u.pk for u in task.watchers.all()}
+            tagged = [u for u in find_mentioned_users(task.details)
+                      if u.pk not in already and u.pk not in (task.assignee_id, request.user.pk)]
+            if tagged:
+                task.watchers.add(*tagged)
+                Notification.send(task, request.user, "mentioned", recipients=tagged)
+
+        messages.success(request, f'Updated "{task.title}": {note}.')
+        return redirect(back)
+
+    return render(request, "tasks/_task_edit.html", {
+        "task": task,
+        "form": form,
+        "next": back,
+        "people": _mention_people(),
     })
 
 

@@ -1,10 +1,80 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="panel">
-  <div class="row-between assign-head">
-    <h2>Assign a task</h2>
-    <a class="btn sm" href="{% url 'recurring' %}">↻ Recurring tasks</a>
+
+{# ---------- greeting + search ---------- #}
+<div class="row-between my-top">
+  <div>
+    <h2 class="my-h">{{ greeting }}, {{ user.first_name|default:user.display_name }}</h2>
+    <p class="muted small">{{ today|date:"l, j F Y" }} · {{ focus.open }} open task{{ focus.open|pluralize }} across the team</p>
   </div>
+  <form method="get" action="{% url 'search' %}" class="search-bar my-search" role="search">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input type="search" name="q" placeholder="Search tasks, briefs and comments…" aria-label="Search tasks">
+  </form>
+</div>
+
+{# ---------- needs your attention ---------- #}
+<div class="focus-strip">
+  <a class="focus-card gold {% if show == 'review' %}on{% endif %} {% if not focus.review %}zero{% endif %}" href="?show=review"><b>{{ focus.review }}</b><span>Waiting for approval</span></a>
+  <a class="focus-card red {% if show == 'overdue' %}on{% endif %} {% if not focus.overdue %}zero{% endif %}" href="?show=overdue"><b>{{ focus.overdue }}</b><span>Overdue</span></a>
+  <a class="focus-card amber {% if show == 'today' and mode == 'single' and day == today %}on{% endif %} {% if not focus.today %}zero{% endif %}" href="?show=today"><b>{{ focus.today }}</b><span>Due today</span></a>
+  <a class="focus-card pink {% if show == 'changes' %}on{% endif %} {% if not focus.changes %}zero{% endif %}" href="?show=changes"><b>{{ focus.changes }}</b><span>Changes requested</span></a>
+  <a class="focus-card blue {% if show == 'open' %}on{% endif %} {% if not focus.open %}zero{% endif %}" href="?show=open"><b>{{ focus.open }}</b><span>All open tasks</span></a>
+</div>
+
+{# ---------- approval queue ---------- #}
+{% if queue %}
+<div class="panel queue">
+  <div class="row-between">
+    <h2>Waiting for your approval <small>oldest first</small></h2>
+    {% if focus.review > queue|length %}<a class="link small" href="?show=review">See all {{ focus.review }} →</a>{% endif %}
+  </div>
+  {% for t in queue %}
+    <div class="q-row" data-open-task="{{ t.pk }}" tabindex="0" role="button" aria-label="Open {{ t.title }}">
+      <span class="avatar sm">{{ t.assignee.initials }}</span>
+      <div class="q-main">
+        <b>{{ t.title }}</b>
+        <div class="muted small">
+          {{ t.assignee.display_name }} · submitted {{ t.submitted_at|timesince }} ago · due {{ t.due_date|date:"j M" }}{% if t.is_late %} <span class="red">(late)</span>{% endif %}
+          {% if t.member_note %}<br><span class="q-note">“{{ t.member_note|truncatechars:90 }}”</span>{% endif %}
+        </div>
+      </div>
+      <div class="q-actions">
+        <form method="post" action="{% url 'task_action' t.pk 'approve' %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="sm ok">✓ Approve</button>
+        </form>
+        <button type="button" class="sm" onclick="openTaskModal({{ t.pk }})">Review</button>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ---------- team workload ---------- #}
+{% if workload %}
+<div class="workload">
+  <span class="muted small wl-label">Team workload</span>
+  {% for w in workload %}
+    <a class="wl-chip {% if member_id == w.user.id|stringformat:'s' %}on{% endif %}" href="?show=open&member={{ w.user.id }}"
+       title="{{ w.user.display_name }}: {{ w.open }} open{% if w.overdue %}, {{ w.overdue }} overdue{% endif %}">
+      <span class="avatar xs {% if w.user.is_admin %}is-admin{% endif %}">{{ w.user.initials }}</span>
+      {{ w.user.first_name|default:w.user.display_name }} <b>{{ w.open }}</b>
+      {% if w.overdue %}<i>{{ w.overdue }} late</i>{% endif %}
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ---------- assign a task (collapsible) ---------- #}
+<details class="panel assign-panel" id="assignPanel" open>
+  <summary class="assign-summary">
+    <h2>➕ Assign a task</h2>
+    <span class="row">
+      <a class="btn sm" href="{% url 'recurring' %}">↻ Recurring tasks</a>
+      <span class="assign-chevron" aria-hidden="true">▾</span>
+    </span>
+  </summary>
   <form method="post" action="{% url 'assign_task' %}" class="form-grid" enctype="multipart/form-data">
     {% csrf_token %}
     <label class="t">Task{{ form.title }}</label>
@@ -46,12 +116,7 @@
     </div>
     <div class="full"><button class="primary" type="submit">Assign task</button></div>
   </form>
-</div>
-
-<form method="get" action="{% url 'search' %}" class="search-bar" role="search">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-  <input type="search" name="q" placeholder="Search tasks, briefs and comments…" aria-label="Search tasks">
-</form>
+</details>
 
 <form method="get" class="controls" id="filters">
   <label class="inline">Show
@@ -60,6 +125,12 @@
       <option value="week" {% if show == 'week' %}selected{% endif %}>Last 7 days</option>
       <option value="month" {% if show == 'month' %}selected{% endif %}>Whole month</option>
       <option value="custom" {% if show == 'custom' %}selected{% endif %}>Custom dates</option>
+      <optgroup label="By status (any date)">
+        <option value="open" {% if show == 'open' %}selected{% endif %}>All open tasks</option>
+        <option value="review" {% if show == 'review' %}selected{% endif %}>Waiting for approval</option>
+        <option value="overdue" {% if show == 'overdue' %}selected{% endif %}>Overdue</option>
+        <option value="changes" {% if show == 'changes' %}selected{% endif %}>Changes requested</option>
+      </optgroup>
     </select>
   </label>
 
@@ -79,7 +150,8 @@
   <noscript><button class="sm">Apply</button></noscript>
 </form>
 <p class="muted small" style="margin:-4px 0 12px">
-  {% if mode == 'range' %}Showing tasks due from <b>{{ start|date:"d M Y" }}</b> to <b>{{ end|date:"d M Y" }}</b>
+  {% if mode == 'list' %}Showing <b>{{ list_label }}</b>{% if member_id != 'all' %} for the selected member{% endif %}
+  {% elif mode == 'range' %}Showing tasks due from <b>{{ start|date:"d M Y" }}</b> to <b>{{ end|date:"d M Y" }}</b>
   {% else %}Showing tasks for <b>{{ day|date:"d M Y" }}</b>{% endif %}
 </p>
 
@@ -89,6 +161,17 @@
 
 {% block scripts %}{% load static %}
 <script src="{% static 'js/voice.js' %}"></script>
+<script>
+// Remember whether the "Assign a task" panel is open or folded.
+(function () {
+  const p = document.getElementById("assignPanel");
+  if (!p) return;
+  try { if (localStorage.getItem("assignPanelOpen") === "0") p.open = false; } catch (e) {}
+  p.addEventListener("toggle", () => { try { localStorage.setItem("assignPanelOpen", p.open ? "1" : "0"); } catch (e) {} });
+  // Clicking the Recurring link inside the header shouldn't fold the panel.
+  p.querySelector("summary a").addEventListener("click", e => e.stopPropagation());
+})();
+</script>
 <script>
 // Typing @ in the assign form's Details box tags people.
 if (window.Mentions) Mentions.attach(document.getElementById("id_details"), Mentions.readPeople("assign-people"));

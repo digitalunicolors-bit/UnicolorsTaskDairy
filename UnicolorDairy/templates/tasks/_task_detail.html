@@ -101,6 +101,7 @@
     {% endif %}
 
     {% if admin_view %}
+      <a class="btn sm" href="{% url 'task_edit' t.pk %}?next={{ next|urlencode }}" data-modal-load>✏️ Edit</a>
       {% if t.status == "review" %}
         <form method="post" action="{% url 'task_action' t.pk 'approve' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ next }}"><button class="sm ok">Approve</button></form>
       {% endif %}

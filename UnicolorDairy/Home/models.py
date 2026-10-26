@@ -194,6 +194,7 @@ class TaskActivity(models.Model):
         APPROVED = "approved", "Approved"
         CHANGES = "changes", "Requested changes"
         REOPENED = "reopened", "Reopened"
+        EDITED = "edited", "Edited"
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="activity")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
@@ -223,11 +224,12 @@ class Notification(models.Model):
         MENTIONED = "mentioned", "Mentioned"
         REMINDER = "reminder", "Reminder"
         OVERDUE = "overdue", "Overdue"
+        EDITED = "edited", "Edited"
 
     ICONS = {
         "assigned": "📌", "started": "▶️", "submitted": "📤", "approved": "✅",
         "changes": "✏️", "reopened": "↩️", "deleted": "🗑️",
-        "commented": "💬", "mentioned": "@", "reminder": "⏰", "overdue": "⚠️",
+        "commented": "💬", "mentioned": "@", "reminder": "⏰", "overdue": "⚠️", "edited": "📝",
     }
 
     # (message for the person the task belongs to, message for everyone else)
@@ -241,6 +243,7 @@ class Notification(models.Model):
         "deleted": ("{actor} deleted your task “{title}”", "{actor} deleted “{title}”{for_owner}"),
         "commented": ("{actor} commented on your task “{title}”", "{actor} commented on “{title}”{for_owner}"),
         "mentioned": ("{actor} mentioned you on “{title}”", "{actor} mentioned you on “{title}”{for_owner}"),
+        "edited": ("{actor} updated your task “{title}”", "{actor} updated “{title}”{for_owner}"),
     }
 
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")

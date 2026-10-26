@@ -2641,6 +2641,7 @@ table.sortable th.desc::after {
         margin-left: 22px
     }
 }
+
 /* login page */
 .auth {
     display: flex;
@@ -2739,7 +2740,7 @@ table.sortable th.desc::after {
     letter-spacing: -.01em
 }
 
-.auth-form > p.muted {
+.auth-form>p.muted {
     margin: 4px 0 22px
 }
 
@@ -2859,5 +2860,155 @@ table.sortable th.desc::after {
 
     .auth-form {
         padding: 26px 22px
+    }
+}
+
+
+/* dashboard: approval queue, workload, collapsible assign panel, edit form */
+.queue {
+    padding-bottom: 8px
+}
+
+.q-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 6px;
+    border-top: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer
+}
+
+.q-row:hover,
+.q-row:focus {
+    background: var(--surface2);
+    outline: none
+}
+
+.q-main {
+    flex: 1;
+    min-width: 0
+}
+
+.q-main b {
+    display: block;
+    word-break: break-word
+}
+
+.q-note {
+    font-style: italic
+}
+
+.q-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex: none
+}
+
+.q-actions form {
+    margin: 0
+}
+
+.workload {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px
+}
+
+.wl-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-right: 4px
+}
+
+.wl-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 4px;
+    border-radius: 99px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    font-size: 12.5px
+}
+
+.wl-chip:hover {
+    border-color: var(--c-prog)
+}
+
+.wl-chip.on {
+    border-color: var(--c-prog);
+    background: color-mix(in srgb, var(--c-prog) 10%, var(--surface))
+}
+
+.wl-chip b {
+    font-variant-numeric: tabular-nums
+}
+
+.wl-chip i {
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--hi)
+}
+
+.assign-panel>summary {
+    list-style: none;
+    cursor: pointer
+}
+
+.assign-panel>summary::-webkit-details-marker {
+    display: none
+}
+
+.assign-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px
+}
+
+.assign-summary h2 {
+    margin: 0
+}
+
+.assign-panel[open]>summary {
+    margin-bottom: 12px
+}
+
+.assign-chevron {
+    display: inline-block;
+    transition: transform .15s;
+    color: var(--muted);
+    font-size: 14px
+}
+
+.assign-panel:not([open]) .assign-chevron {
+    transform: rotate(-90deg)
+}
+
+.edit-form {
+    margin-top: 16px
+}
+
+.edit-hint {
+    margin: 0
+}
+
+.td-timeline li.tl-edited::before {
+    background: var(--c-prog)
+}
+
+@media (max-width:640px) {
+    .q-row {
+        flex-wrap: wrap
+    }
+
+    .q-actions {
+        margin-left: 40px
     }
 }

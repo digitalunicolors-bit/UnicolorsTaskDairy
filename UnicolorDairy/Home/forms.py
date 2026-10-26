@@ -216,3 +216,24 @@ class RecurringTaskForm(forms.ModelForm):
             rule.save()
             self.save_m2m()
         return rule
+
+class TaskEditForm(forms.ModelForm):
+    """Admins change a task after assigning it: wording, priority, due date or who does it."""
+
+    class Meta:
+        model = Task
+        fields = ["title", "priority", "due_date", "assignee", "details"]
+        labels = {"assignee": "Assigned to", "title": "Task"}
+        widgets = {
+            "due_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "details": forms.Textarea(attrs={"rows": 4, "placeholder": "Brief, references, file links…"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        people = User.objects.filter(is_active=True)
+        if self.instance.pk:
+            people = people | User.objects.filter(pk=self.instance.assignee_id)
+        self.fields["assignee"].queryset = people.distinct()
+        self.fields["assignee"].label_from_instance = lambda u: u.display_name
+        self.fields["assignee"].empty_label = None

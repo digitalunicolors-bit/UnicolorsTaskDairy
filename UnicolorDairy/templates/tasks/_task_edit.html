@@ -1,0 +1,29 @@
+{# Edit form shown inside the task pop-up (admins only). #}
+<div class="td">
+  <div class="td-head">
+    <div class="td-head-text">
+      <span class="muted small">Editing task</span>
+      <h2>{{ task.title }}</h2>
+    </div>
+    <button type="button" class="td-close" data-close aria-label="Close">✕</button>
+  </div>
+
+  <form method="post" action="{% url 'task_edit' task.pk %}" class="form-grid edit-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="t">Task{{ form.title }}</label>
+    <label>Priority{{ form.priority }}</label>
+    <label>Due date{{ form.due_date }}</label>
+    <label class="full">Assigned to{{ form.assignee }}</label>
+    <label class="full">Brief (type @ to tag someone){{ form.details }}</label>
+    <p class="full muted small edit-hint">
+      The person working on it is notified of what changed. If you reassign it, the new person gets the task
+      (with its files and comments), and a new due date sets up fresh reminders automatically.
+    </p>
+    <div class="full row">
+      <button class="primary" type="submit">Save changes</button>
+      <button type="button" class="btn" data-back-to-task="{{ task.pk }}">Cancel</button>
+    </div>
+  </form>
+  {{ people|json_script:"edit-people" }}
+</div>
