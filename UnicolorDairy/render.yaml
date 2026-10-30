@@ -1,0 +1,43 @@
+# Render Blueprint for Unicolors Task Diary.
+# On Render: New > Blueprint > pick this repo. Fill in the "sync: false" values when asked.
+databases:
+  - name: unicolors-diary-db
+    plan: basic-256mb
+    databaseName: unicolors_diary
+    user: unicolors
+
+services:
+  - type: web
+    name: unicolors-task-diary
+    runtime: python
+    plan: starter            # paid plan: needed for the disk below and so the app never sleeps
+    rootDir: UnicolorDairy
+    buildCommand: bash build.sh   # build.sh isn't marked executable in git, so call it via bash
+    # ONE worker on purpose: each worker starts the daily reminder thread,
+    # so more workers would send every reminder email several times.
+    startCommand: gunicorn UnicolorDairy.wsgi:application --workers 1 --threads 4 --timeout 120
+    disk:
+      name: uploads
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: unicolors-diary-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_HTTPS
+        value: "1"
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false

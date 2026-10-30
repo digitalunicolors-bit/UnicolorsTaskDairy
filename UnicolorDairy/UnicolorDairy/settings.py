@@ -164,13 +164,22 @@ AUTHENTICATION_BACKENDS = ["Home.backends.EmailOrUsernameBackend"]
 
 
 #email config
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "pathakniyati34@gmail.com"
-EMAIL_HOST_PASSWORD ="cyqbvkrmcsukgnev"
-DEFAULT_FROM_EMAIL = "pathakniyati34@gmail.com"
+# Secrets come from environment variables (set them on the host / in .env), never in code.
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if EMAIL_HOST_PASSWORD
+    else "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", "1")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "webmaster@localhost")
+
+# Uploaded attachments / voice notes. On Render, point this at the mounted disk.
+if os.environ.get("MEDIA_ROOT"):
+    MEDIA_ROOT = Path(os.environ["MEDIA_ROOT"])
 
 #invitation link expire days
 INVITE_EXPIRY_HOURS = 72
