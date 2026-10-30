@@ -1,8 +1,11 @@
-# Render Blueprint for Unicolors Task Diary.
+# Render Blueprint for Unicolors Task Diary - FREE plan (temporary/testing).
+# Free plan limits: the site sleeps after ~15 min idle (first visit then takes ~1 min),
+# uploaded attachments/voice notes are wiped on every restart or deploy,
+# daily reminders only run while the site is awake, and the free database expires after ~30 days.
 # On Render: New > Blueprint > pick this repo. Fill in the "sync: false" values when asked.
 databases:
   - name: unicolors-diary-db
-    plan: basic-256mb
+    plan: free
     databaseName: unicolors_diary
     user: unicolors
 
@@ -10,16 +13,12 @@ services:
   - type: web
     name: unicolors-task-diary
     runtime: python
-    plan: starter            # paid plan: needed for the disk below and so the app never sleeps
+    plan: free
     rootDir: UnicolorDairy
     buildCommand: bash build.sh   # build.sh isn't marked executable in git, so call it via bash
     # ONE worker on purpose: each worker starts the daily reminder thread,
     # so more workers would send every reminder email several times.
     startCommand: gunicorn UnicolorDairy.wsgi:application --workers 1 --threads 4 --timeout 120
-    disk:
-      name: uploads
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.7"
@@ -33,11 +32,17 @@ services:
         value: "0"
       - key: DJANGO_HTTPS
         value: "1"
-      - key: MEDIA_ROOT
-        value: /var/data/media
       - key: EMAIL_HOST_USER
         sync: false
       - key: EMAIL_HOST_PASSWORD
         sync: false
       - key: DEFAULT_FROM_EMAIL
+        sync: false
+      # First admin login, created automatically during the build
+      # (the free plan has no Shell tab to run createsuperuser).
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
         sync: false
