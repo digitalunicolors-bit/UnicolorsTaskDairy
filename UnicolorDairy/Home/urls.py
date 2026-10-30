@@ -12,6 +12,7 @@ urlpatterns = [
     path("task/comment/<int:pk>/delete/", views.task_comment_delete, name="task_comment_delete"),
     path("tasks/<int:pk>/<str:action>/", views.task_action, name="task_action"),
     path("my-tasks/", views.my_tasks, name="my_tasks"),
+    path("my-tasks/checklist/save/", views.save_admin_note, name="save_admin_note"),
     path("files/<int:pk>/", views.attachment, name="attachment"),
     path("reports/", views.report, name="report"),
     path("reports/export.csv", views.report_csv, name="report_csv"),

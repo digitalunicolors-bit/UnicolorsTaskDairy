@@ -30,7 +30,7 @@ from .forms import (
     TaskEditForm,
 )
 from .models import (
-    Notification, RecurringTask, Task, TaskActivity, TaskAttachment, TaskComment, User,
+    AdminNote, Notification, RecurringTask, Task, TaskActivity, TaskAttachment, TaskComment, User,
     active_admins, find_mentioned_users,
 )
 
@@ -536,6 +536,10 @@ def _agenda(tasks, today):
 @login_required
 def my_tasks(request):
     user = request.user
+    if user.is_admin:
+        # Admins get their personal checklist here instead of task counts.
+        note, _ = AdminNote.objects.get_or_create(user=user)
+        return render(request, "tasks/admin_checklist.html", {"note": note})
     show = request.GET.get("show", "open")
     now = timezone.localtime()
     today = now.date()
@@ -595,6 +599,20 @@ def my_tasks(request):
         "today": today,
         "is_tagged_view": show == "tagged",
     })
+
+
+@admin_required
+@require_POST
+def save_admin_note(request):
+    """Autosave for the admin's checklist (called by the page's JavaScript)."""
+    content = request.POST.get("content", "")
+    if len(content) > 500_000:
+        return JsonResponse({"error": "Checklist is too long"}, status=400)
+    note, _ = AdminNote.objects.get_or_create(user=request.user)
+    note.content = content
+    note.save()
+    saved_at = timezone.localtime(note.updated_at).strftime("%d %b %Y, %I:%M %p")
+    return JsonResponse({"ok": True, "saved_at": saved_at})
 
 
 # ---------------------------------------------------------------- reports

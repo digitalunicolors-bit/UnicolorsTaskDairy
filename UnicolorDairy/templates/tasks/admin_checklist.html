@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="np-wrap">
+  <div class="np-head">
+    <div>
+      <h3>My checklist</h3>
+      <span id="np-count" class="np-count"></span>
+    </div>
+    <span id="save-status" class="np-status">Last saved {{ note.updated_at|date:"d M Y, h:i A" }}</span>
+  </div>
+
+  <div class="np-progress"><div id="np-bar"></div></div>
+
+  <ul id="np-list" class="np-list"></ul>
+
+  <form id="np-add" class="np-add">
+    <input id="np-new" type="text" placeholder="Add New Task Here" autocomplete="off">
+    <button type="submit" class="np-btn np-primary">+ Add</button>
+  </form>
+
+  <div class="np-actions">
+    <button type="button" id="save-btn" class="np-btn np-primary">Save</button>
+    <button type="button" id="clear-done" class="np-btn np-light">Remove Done Tasks</button>
+    <span class="np-hint">Auto-save on</span>
+  </div>
+    <details id="np-history" class="np-history">
+    <summary>History <span id="np-hcount"></span></summary>
+    <div id="np-hlist"></div>
+  </details>
+</div>
+
+{{ note.content|json_script:"note-data" }}
+
+<style>
+  .np-wrap{background:#fff;color:#222;border-radius:14px;padding:20px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);max-width:900px}
+  .np-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+  .np-head h3{margin:0;font-size:18px}
+  .np-count{font-size:13px;color:#666}
+  .np-status{font-size:12px;color:#999;white-space:nowrap}
+
+  .np-progress{height:6px;background:#f1efea;border-radius:99px;overflow:hidden;margin-bottom:14px}
+  #np-bar{height:100%;width:0;background:#22a06b;transition:width .3s}
+
+  .np-list{list-style:none;margin:0 0 12px;padding:0;max-height:380px;overflow-y:auto}
+  .np-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid #f1efea;border-radius:8px}
+  .np-item:hover{background:#fbfaf7}
+  .np-item input[type=checkbox]{width:18px;height:18px;accent-color:#22a06b;cursor:pointer;flex-shrink:0;margin:0}
+  .np-text{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:15px;padding:4px 0;color:#222}
+  .np-text:focus{outline:none;border-bottom:1px solid #e5484d}
+  .np-item.is-done .np-text{text-decoration:line-through;color:#22a06b;opacity:.75}
+  .np-del{border:0 !important;background:transparent !important;color:#bbb !important;font-size:20px;line-height:1;cursor:pointer;padding:0 4px;flex-shrink:0}
+  .np-del:hover{color:#e5484d !important}
+  .np-empty{color:#999;font-size:14px;padding:14px 4px}
+
+  .np-add{display:flex;gap:8px;margin-bottom:12px}
+  .np-add input{flex:1;min-width:0;border:1px solid #e5e2dc;border-radius:10px;padding:10px 12px;font:inherit;font-size:15px;background:#fffdf7}
+  .np-add input:focus{outline:none;border-color:#e5484d}
+
+  .np-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .np-hint{font-size:12px;color:#999}
+
+  /* Buttons ka color hamesha same rahe (app.css ke grey style ko override) */
+  .np-wrap .np-btn{border:0;padding:9px 18px;border-radius:8px;cursor:pointer;font:inherit;font-size:14px;white-space:nowrap}
+  .np-wrap .np-primary,
+  .np-wrap .np-primary:hover,
+  .np-wrap .np-primary:focus,
+  .np-wrap .np-primary:active{background:#e5484d !important;color:#fff !important;box-shadow:none}
+  .np-wrap .np-primary:hover{filter:brightness(.92)}
+  .np-wrap .np-light,
+  .np-wrap .np-light:hover,
+  .np-wrap .np-light:focus,
+  .np-wrap .np-light:active{background:#f1efea !important;color:#333 !important}
+
+  .np-history{margin-top:20px;border-top:1px solid #f1efea;padding-top:14px}
+  .np-history summary{cursor:pointer;font-weight:600;font-size:15px;list-style:none;user-select:none}
+  .np-history summary::-webkit-details-marker{display:none}
+  .np-history summary::before{content:"▸ ";color:#999}
+  .np-history[open] summary::before{content:"▾ "}
+  #np-hcount{font-weight:400;color:#999;font-size:13px}
+  .np-hday{margin-top:14px}
+  .np-hdate{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+  .np-hitem{display:flex;align-items:center;gap:10px;padding:6px 10px;font-size:14px;color:#555;border-radius:8px}
+  .np-hitem:hover{background:#fbfaf7}
+  .np-htick{color:#22a06b;flex-shrink:0}
+  .np-htext{flex:1;min-width:0;word-break:break-word}
+  .np-restore{border:0 !important;background:transparent !important;color:#999 !important;cursor:pointer;font:inherit;font-size:13px;padding:2px 6px;white-space:nowrap}
+  .np-restore:hover{color:#e5484d !important}
+
+
+  /* Mobile */
+  @media (max-width:600px){
+    .np-wrap{padding:14px;border-radius:12px}
+    .np-head{flex-direction:column}
+    .np-status{white-space:normal}
+    .np-text,.np-add input{font-size:16px}   /* iPhone pe zoom na ho */
+    .np-list{max-height:none}
+    .np-actions .np-btn{flex:1}
+    .np-hint{width:100%}
+  }
+</style>
+
+<script>
+(function () {
+  const list = document.getElementById("np-list");
+  const newInput = document.getElementById("np-new");
+  const status = document.getElementById("save-status");
+  const saveBtn = document.getElementById("save-btn");
+  const csrf = "{{ csrf_token }}";
+  const url = "{% url 'save_admin_note' %}";
+  const KEEP_DAYS = 90;            // kitne din ki history rakhni hai
+  let timer = null;
+
+  const today = new Date().toLocaleDateString("en-CA");   // "2026-10-26"
+
+  // Saved data padho (purane plain-text notes bhi chalenge)
+  const raw = JSON.parse(document.getElementById("note-data").textContent || '""');
+  let items = [];
+  try {
+    items = JSON.parse(raw);
+    if (!Array.isArray(items)) throw 0;
+  } catch (e) {
+    items = (raw || "").split("\n").map(s => s.trim()).filter(Boolean)
+      .map(t => ({ text: t, done: false }));
+  }
+
+  // Jin done tasks pe date nahi hai, unhe aaj ki date do
+  items.forEach(i => { if (i.done && !i.doneOn) i.doneOn = today; });
+
+  // KEEP_DAYS se purani history hata do
+  const cut = new Date();
+  cut.setDate(cut.getDate() - KEEP_DAYS);
+  const cutStr = cut.toLocaleDateString("en-CA");
+  const before = items.length;
+  items = items.filter(i => !i.done || i.doneOn >= cutStr);
+  const cleaned = items.length !== before;
+
+  // Main list mein kaun dikhega: pending tasks + aaj done hue (jo history mein nahi bheje)
+  const isActive = i => !i.archived && (!i.done || i.doneOn === today);
+
+  function updateCount() {
+    const act = items.filter(isActive);
+    const done = act.filter(i => i.done).length;
+    document.getElementById("np-count").textContent =
+      act.length ? `${done} / ${act.length} done` : "";
+    document.getElementById("np-bar").style.width =
+      act.length ? (done * 100 / act.length) + "%" : "0";
+  }
+
+  function render() {
+    list.innerHTML = "";
+    let shown = 0;
+    items.forEach((it, i) => {
+      if (!isActive(it)) return;
+      shown++;
+      const li = document.createElement("li");
+      li.className = "np-item" + (it.done ? " is-done" : "");
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = it.done;
+      cb.title = "Done";
+      cb.onchange = () => {
+        it.done = cb.checked;
+        it.doneOn = it.done ? today : null;
+        li.classList.toggle("is-done", it.done);
+        updateCount();
+        renderHistory();
+        save();
+      };
+
+      const txt = document.createElement("input");
+      txt.type = "text";
+      txt.className = "np-text";
+      txt.value = it.text;
+      txt.oninput = () => { it.text = txt.value; queueSave(); };
+      txt.onkeydown = e => {
+        if (e.key === "Enter") { e.preventDefault(); newInput.focus(); }
+        if (e.key === "Backspace" && txt.value === "") {
+          e.preventDefault(); items.splice(i, 1); render(); save();
+        }
+      };
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "np-del";
+      del.title = "Delete";
+      del.textContent = "×";
+      del.onclick = () => { items.splice(i, 1); render(); save(); };
+
+      li.append(cb, txt, del);
+      list.append(li);
+    });
+    if (!shown) {
+      list.innerHTML = '<li class="np-empty">Abhi koi task nahi hai – neeche add karo 👇</li>';
+    }
+    updateCount();
+    renderHistory();
+  }
+
+  function niceDate(d) {
+    return new Date(d + "T00:00:00").toLocaleDateString("en-IN",
+      { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function renderHistory() {
+    const hlist = document.getElementById("np-hlist");
+    hlist.innerHTML = "";
+    const groups = {};
+    let count = 0;
+    items.forEach((it, i) => {
+      if (!it.done || isActive(it)) return;
+      (groups[it.doneOn] = groups[it.doneOn] || []).push(i);
+      count++;
+    });
+
+    const days = Object.keys(groups).sort().reverse();   // naya din upar
+    document.getElementById("np-hcount").textContent = count ? `(${count})` : "";
+    if (!days.length) {
+      hlist.innerHTML = '<p class="np-empty">empty history</p>';
+      return;
+    }
+
+    days.forEach(d => {
+      const box = document.createElement("div");
+      box.className = "np-hday";
+      const head = document.createElement("div");
+      head.className = "np-hdate";
+      head.textContent = d === today ? "Today" : niceDate(d);
+      box.append(head);
+
+      groups[d].forEach(i => {
+        const it = items[i];
+        const row = document.createElement("div");
+        row.className = "np-hitem";
+
+        const tick = document.createElement("span");
+        tick.className = "np-htick";
+        tick.textContent = "✓";
+
+        const text = document.createElement("span");
+        text.className = "np-htext";
+        text.textContent = it.text;
+
+        const restore = document.createElement("button");
+        restore.type = "button";
+        restore.className = "np-restore";
+        restore.textContent = "↺ Restore";
+        restore.title = "Wapas pending list mein lao";
+        restore.onclick = () => {
+          it.done = false; it.doneOn = null; it.archived = false;
+          render(); save();
+        };
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "np-del";
+        del.textContent = "×";
+        del.title = "Hamesha ke liye delete";
+        del.onclick = () => {
+          if (confirm("Ye task hamesha ke liye delete karna hai?")) {
+            items.splice(i, 1); render(); save();
+          }
+        };
+
+        row.append(tick, text, restore, del);
+        box.append(row);
+      });
+      hlist.append(box);
+    });
+  }
+
+  function save() {
+    clearTimeout(timer);
+    status.textContent = "Saving…";
+    const data = new FormData();
+    data.append("content", JSON.stringify(items));
+    return fetch(url, { method: "POST", headers: { "X-CSRFToken": csrf }, body: data })
+      .then(r => r.json())
+      .then(d => { status.textContent = "Saved " + d.saved_at; })
+      .catch(() => { status.textContent = "Save nahi hua – dobara try karo"; });
+  }
+
+  function queueSave() {
+    status.textContent = "Typing…";
+    clearTimeout(timer);
+    timer = setTimeout(save, 1000);
+  }
+
+  document.getElementById("np-add").onsubmit = e => {
+    e.preventDefault();
+    const text = newInput.value.trim();
+    if (!text) return;
+    items.push({ text, done: false });
+    newInput.value = "";
+    render();
+    save();
+    list.scrollTop = list.scrollHeight;
+  };
+
+  saveBtn.onclick = () => {
+    save().then(() => {
+      saveBtn.textContent = "Saved ✓";
+      setTimeout(() => { saveBtn.textContent = "Save"; saveBtn.blur(); }, 1500);
+    });
+  };
+
+  // Done tasks ko delete nahi, History mein bhejo
+  document.getElementById("clear-done").onclick = () => {
+    const doneNow = items.filter(i => isActive(i) && i.done);
+    if (!doneNow.length) return;
+    if (confirm("Done tasks History mein bhej dein?")) {
+      doneNow.forEach(i => { i.archived = true; });
+      render();
+      save();
+    }
+  };
+
+  document.addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save(); }
+  });
+
+  render();
+  if (cleaned) save();
+})();
+</script>
+{% endblock %}

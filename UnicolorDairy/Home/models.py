@@ -413,3 +413,13 @@ class RecurringTask(models.Model):
         if self.due_in_days == 1:
             return "Due the next day"
         return f"Due {self.due_in_days} days later"
+
+class AdminNote(models.Model):
+    """An admin's personal checklist on the My Tasks page (stored as JSON text)."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="admin_note_pad")
+    content = models.TextField(blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Checklist of {self.user}"
