@@ -1,5 +1,6 @@
 """Settings for the Unicolors Daily Tasks app. Configure via environment variables (see .env.example)."""
 import os
+import dj_database_url
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -34,7 +35,17 @@ if not DEBUG and SECRET_KEY.startswith("dev-only"):
     raise RuntimeError("Set DJANGO_SECRET_KEY in production.")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+RENDER_EXTERNAL_HOSTNAME = os.environ.get(
+    "RENDER_EXTERNAL_HOSTNAME"
+)
+
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+if RENDER_EXTERNAL_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS.append(
+        f"https://{RENDER_EXTERNAL_HOSTNAME}"
+    )
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -77,7 +88,18 @@ TEMPLATES = [
 WSGI_APPLICATION = 'UnicolorDairy.wsgi.application'
 ASGI_APPLICATION = 'UnicolorDairy.asgi.application'
 
-if os.environ.get("DB_NAME"):
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    }
+
+elif os.environ.get("DB_NAME"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -88,11 +110,13 @@ if os.environ.get("DB_NAME"):
             "PORT": os.environ.get("DB_PORT", "5432"),
         }
     }
+
 else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": os.environ.get("SQLITE_PATH") or BASE_DIR / "db.sqlite3",
+            "NAME": os.environ.get("SQLITE_PATH")
+            or BASE_DIR / "db.sqlite3",
         }
     }
 
@@ -133,5 +157,20 @@ if env_bool("DJANGO_HTTPS"):
 
 # Added by update_diary.py (attachments, voice notes, email login)
 MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
 MAX_UPLOAD_MB = 20
 AUTHENTICATION_BACKENDS = ["Home.backends.EmailOrUsernameBackend"]
+
+
+
+#email config
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = "pathakniyati34@gmail.com"
+EMAIL_HOST_PASSWORD ="cyqbvkrmcsukgnev"
+DEFAULT_FROM_EMAIL = "pathakniyati34@gmail.com"
+
+#invitation link expire days
+INVITE_EXPIRY_HOURS = 72
