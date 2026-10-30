@@ -184,5 +184,11 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "we
 if os.environ.get("MEDIA_ROOT"):
     MEDIA_ROOT = Path(os.environ["MEDIA_ROOT"])
 
+# Public address used for links inside emails (invites, task notifications).
+# Set SITE_URL for a custom domain; on Render it defaults to the service's own address.
+SITE_URL = os.environ.get("SITE_URL", "").strip().rstrip("/")
+if not SITE_URL:
+    SITE_URL = f"https://{RENDER_EXTERNAL_HOSTNAME}" if RENDER_EXTERNAL_HOSTNAME else "http://127.0.0.1:8000"
+
 #invitation link expire days
 INVITE_EXPIRY_HOURS = 72
