@@ -3012,3 +3012,148 @@ table.sortable th.desc::after {
         margin-left: 40px
     }
 }
+/* ==========================================================================
+   Mobile polish - phones and small tablets only.
+   Everything below sits inside max-width media queries, so the desktop
+   layout is untouched.
+   ========================================================================== */
+@media (max-width: 760px) {
+    /* Stop iPhone Safari from zooming in when a field is tapped (it zooms below 16px) */
+    input:not([type=checkbox]):not([type=radio]),
+    select,
+    textarea {
+        font-size: 16px
+    }
+
+    /* Finger-sized tap targets */
+    button,
+    .btn {
+        min-height: 40px
+    }
+
+    .sm {
+        min-height: 34px;
+        padding: 6px 11px
+    }
+
+    /* Header: keep it to a tidy two rows */
+    header.top {
+        align-items: center;
+        gap: 10px
+    }
+
+    header.top .sub,
+    .who-name {
+        display: none
+    }
+
+    .who {
+        width: 100%;
+        gap: 8px;
+        justify-content: flex-end
+    }
+
+    .who .link {
+        margin-right: auto;
+        order: -1
+    }
+
+    /* Tabs: fade the right edge so it's clear they scroll sideways */
+    .tabs {
+        -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+        mask-image: linear-gradient(90deg, #000 85%, transparent);
+        scrollbar-width: none
+    }
+
+    .tabs::-webkit-scrollbar {
+        display: none
+    }
+
+    .tab:last-child {
+        margin-right: 32px
+    }
+
+    /* Slightly less padding so content gets the width */
+    .wrap {
+        padding: 14px 12px 40px
+    }
+
+    .panel {
+        padding: 14px;
+        border-radius: 12px
+    }
+
+    /* Filters / controls: full-width fields instead of squeezed ones */
+    .controls > * {
+        flex: 1 1 140px
+    }
+
+    .controls button,
+    .controls .btn {
+        flex: 0 0 auto
+    }
+
+    /* Wide tables keep scrolling smoothly with momentum on iOS */
+    .scroll {
+        -webkit-overflow-scrolling: touch
+    }
+
+    /* Task popup: use the whole phone screen height properly */
+    .modal {
+        width: calc(100vw - 16px);
+        max-height: calc(100dvh - 24px)
+    }
+
+    .td-actions .actions > *,
+    .td-actions .actions form button {
+        flex: 1 1 auto
+    }
+
+    /* Notifications open as a full-width panel right under the header row,
+       instead of hanging off the bell (which can push it off-screen) */
+    .who {
+        position: relative
+    }
+
+    .who .notif {
+        position: static
+    }
+
+    .notif-panel {
+        left: 0;
+        right: 0;
+        width: auto;
+        max-width: none;
+        max-height: 70vh;
+        overflow-y: auto
+    }
+
+    .team-sort select {
+        min-width: 0
+    }
+}
+
+@media (max-width: 480px) {
+    /* Assign-task form: one field per row on small phones */
+    .form-grid {
+        grid-template-columns: 1fr
+    }
+
+    .brief-extras,
+    .auth-card {
+        grid-template-columns: 1fr
+    }
+
+    h1 {
+        font-size: 19px
+    }
+
+    .role-badge {
+        font-size: 10px
+    }
+
+    .day-row .t,
+    .picker-input {
+        min-width: 0
+    }
+}
