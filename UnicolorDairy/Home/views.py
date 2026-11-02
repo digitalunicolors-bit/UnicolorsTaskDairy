@@ -104,21 +104,6 @@ def _board(tasks):
     ]
 
 
-def _stats(tasks):
-    tasks = list(tasks)
-    total = len(tasks)
-    done = sum(1 for t in tasks if t.status == S.DONE)
-    return {
-        "total": total,
-        "progress": sum(1 for t in tasks if t.status == S.PROGRESS),
-        "review": sum(1 for t in tasks if t.status == S.REVIEW),
-        "change": sum(1 for t in tasks if t.status == S.CHANGE),
-        "hold": sum(1 for t in tasks if t.status == S.HOLD),
-        "late": sum(1 for t in tasks if t.is_late),
-        "pct": round(done * 100 / total) if total else 0,
-    }
-
-
 def _log(task, user, action, note=""):
     TaskActivity.objects.create(task=task, actor=user, action=action, note=note)
 
@@ -277,7 +262,6 @@ def dashboard(request):
         "pending_leave_count": leaves_managed_by(request.user).filter(status=Leave.Status.PENDING).count(),
         "form": form,
         "board": _board(tasks),
-        "stats": _stats(tasks),
         "show": show,
         "mode": mode,
         "list_label": DASHBOARD_LISTS.get(show, ""),
@@ -662,6 +646,10 @@ MY_FILTERS = [
 def _due_label(t, today):
     if t.status == S.DONE:
         return "Done"
+    if t.status == S.REVIEW:
+        return "Waiting for approval"
+    if t.status == S.HOLD:
+        return "On hold"
     days = (t.due_date - today).days
     if days < 0:
         return f"Overdue · {-days} day{'s' if days != -1 else ''}"
@@ -679,13 +667,15 @@ def _agenda(tasks, today):
     week_end = today + timedelta(days=6 - today.weekday())
     groups = [
         ("overdue", "Overdue", []), ("today", "Today", []), ("tomorrow", "Tomorrow", []),
-        ("week", "Later this week", []), ("later", "Later", []), ("done", "Done", []),
+        ("week", "Later this week", []), ("later", "Later", []), ("waiting", "Waiting on others", []), ("done", "Done", []),
     ]
     by_key = {k: items for k, _, items in groups}
     for t in tasks:
         t.due_label = _due_label(t, today)
         if t.status == S.DONE:
             by_key["done"].append(t)
+        elif t.status in (S.REVIEW, S.HOLD):
+            by_key["waiting"].append(t)  # not overdue, and not this person's next step
         elif t.due_date < today:
             by_key["overdue"].append(t)
         elif t.due_date == today:
@@ -756,7 +746,6 @@ def my_tasks(request):
 
     return render(request, "tasks/my_tasks.html", {
         "board": _board(tasks),
-        "stats": _stats(tasks),
         "agenda": _agenda(tasks, today),
         "show": show,
         "filters": MY_FILTERS,

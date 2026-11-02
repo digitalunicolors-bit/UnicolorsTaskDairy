@@ -303,3 +303,84 @@ input[type=file]::file-selector-button { background: var(--surface2); color: var
 .who > *, .who .notif { align-self: center; }
 .who .avatar { flex: none; }
 .notif-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 0; border-radius: 50%; }
+
+/* ---------- simpler dashboard ---------- */
+.top-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; flex: 1 1 340px; min-width: 0; }
+.top-actions .search-bar { flex: 1 1 220px; max-width: 340px; margin: 0; }
+.my-top { align-items: center; gap: 12px; margin-bottom: 12px; }
+.focus-strip { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 12px; scrollbar-width: none; }
+.focus-strip::-webkit-scrollbar { display: none; }
+.focus-card { flex: 1 0 118px; min-width: 118px; padding: 9px 13px; border-radius: 14px; display: flex; flex-direction: column; }
+.focus-card b { font-size: 24px; }
+.focus-card span { font-size: 12.5px; margin-top: 3px; white-space: nowrap; }
+
+.fold { padding: 0; margin-bottom: 8px; border-radius: 14px; }
+.fold-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; list-style: none; }
+.fold-head::-webkit-details-marker { display: none; }
+.fold-head h2 { margin: 0; padding: 0; border: 0; font-size: 15px; font-weight: 600; font-family: "Hanken Grotesk", system-ui, sans-serif; letter-spacing: 0; }
+.fold-head .count { margin-left: 0; background: var(--brand); color: var(--brand-ink); border-radius: 99px; min-width: 20px; padding: 0 6px; text-align: center; font-size: 12px; font-weight: 700; }
+.fold-head .assign-chevron { margin-left: auto; color: var(--muted); }
+.fold[open] .assign-chevron { transform: rotate(180deg); }
+.fold > :not(summary) { margin-left: 16px; margin-right: 16px; }
+.fold[open] { padding-bottom: 8px; }
+.banner { margin-bottom: 8px; padding: 8px 12px; }
+.banner.row-between { align-items: center; }
+.workload { margin: 10px 0; }
+
+.board-filters { align-items: flex-end; gap: 8px; margin: 12px 0; }
+.filter-more { position: relative; }
+.filter-more summary { list-style: none; cursor: pointer; display: inline-flex; }
+.filter-more summary::-webkit-details-marker { display: none; }
+.filter-more[open] { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.filter-more-body { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.form-dialog .form-grid { margin-top: 14px; }
+.form-dialog { width: min(780px, calc(100vw - 24px)); }
+.form-dialog .picker-list { position: static; margin-top: 4px; }
+
+/* Cards: a clean summary. Actions live in the pop-up. */
+.card { padding: 11px 13px; cursor: pointer; }
+.card h3 { margin: 0; line-height: 1.3; }
+.card .meta { margin-top: 7px; }
+.card:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.card-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; font-size: 12.5px; color: var(--muted); align-items: baseline; }
+.card-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-due { white-space: nowrap; margin-left: auto; }
+.card-due.late { color: var(--hi); font-weight: 650; }
+
+/* ---------- More menu ---------- */
+.tab-more { position: relative; display: inline-flex; outline: 0; }
+.tab-more-label { cursor: pointer; }
+.tab-more:focus-visible .tab-more-label { outline: 2px solid var(--brand); }
+.tab-more-list { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; min-width: 150px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 6px; flex-direction: column; gap: 2px; box-shadow: 0 16px 40px rgba(0, 0, 0, .45); }
+.tab-more:hover .tab-more-list, .tab-more:focus-within .tab-more-list { display: flex; }
+.tab-more::after { content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 6px; }
+@media (min-width: 861px) { .tabs { overflow: visible; } }
+
+/* ---------- task pop-up ---------- */
+.td-key { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.td-more { margin-top: 10px; }
+.td-more > summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 550; padding: 4px 0; width: fit-content; }
+.td-more > summary:hover { color: var(--brand); }
+
+/* ---------- phone ---------- */
+.who .avatar { width: 26px !important; height: 26px !important; min-width: 26px; padding: 0; aspect-ratio: 1; border-radius: 50%; }
+@media (max-width: 860px) {
+    .top-actions { flex: 1 1 100%; justify-content: stretch; }
+    .top-actions .search-bar { max-width: none; flex: 1 1 100%; }
+    .top-actions .primary, .top-actions .btn { flex: 1 1 auto; text-align: center; }
+    .focus-card { flex: 0 0 112px; min-width: 112px; }
+    .tab-more { display: contents; }
+    .tab-more-label { display: none; }
+    .tab-more-list, .tab-more:hover .tab-more-list, .tab-more:focus-within .tab-more-list { display: contents; }
+    .tab-more::after { display: none; }
+}
+
+.picker-box { border: 1px solid var(--line); }
+.picker-box:focus-within { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); outline: 0; }
+.picker-input, .picker-input:focus, .picker-input:focus-visible { border: 0 !important; box-shadow: none !important; outline: 0 !important; background: transparent !important; }
+.board-filters .btn { padding: 7px 14px; font-size: 13.5px; }
+@media (max-width: 860px) {
+    .focus-card { flex: 0 0 136px; min-width: 136px; }
+}
+.who .avatar { min-height: 26px !important; max-height: 26px; }

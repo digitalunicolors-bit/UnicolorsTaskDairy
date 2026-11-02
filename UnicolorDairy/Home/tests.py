@@ -928,5 +928,23 @@ class CorporateTests(TestCase):
             summaries.send_morning_summaries(day)
         self.assertEqual(EmailFailure.objects.get().recipient, self.yashi.email)
 
+    def test_list_view_does_not_call_held_or_submitted_tasks_overdue(self):
+        past = self.today - timedelta(days=2)
+        self.task(title="Held", due_date=past, status="hold")
+        self.task(title="Submitted", due_date=past, status="review", submitted_at=self.now)
+        self.task(title="Really late", due_date=past)
+        self.client.force_login(self.yashi)
+        groups = {g["key"]: [t.title for t in g["tasks"]] for g in self.client.get(reverse("my_tasks")).context["agenda"]}
+        self.assertEqual(groups["overdue"], ["Really late"])
+        self.assertCountEqual(groups["waiting"], ["Held", "Submitted"])
+
+    def test_cards_are_a_simple_summary_with_actions_in_the_popup(self):
+        t = self.task(title="Card", details="Long secret brief")
+        self.client.force_login(self.yashi)
+        html = self.client.get(reverse("my_tasks")).content.decode()
+        self.assertNotIn("Long secret brief", html)
+        self.assertNotIn(reverse("task_action", args=[t.pk, "start"]), html)
+        self.assertContains(self.client.get(reverse("task_detail", args=[t.pk])), reverse("task_action", args=[t.pk, "start"]))
+
     def test_health_check_is_public(self):
         self.assertEqual(self.client.get(reverse("healthz")).status_code, 200)

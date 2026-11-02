@@ -1,14 +1,5 @@
 {# Expects: board, stats, admin_view, show_member #}
 {% load static %}
-<div class="stats">
-  <div class="stat"><small>Tasks</small><b>{{ stats.total }}</b></div>
-  <div class="stat"><small>In progress</small><b>{{ stats.progress }}</b></div>
-  <div class="stat"><small>Needs approval</small><b>{{ stats.review }}</b></div>
-  <div class="stat"><small>Changes requested</small><b>{{ stats.change }}</b></div>
-  <div class="stat"><small>On hold</small><b>{{ stats.hold }}</b></div>
-  <div class="stat"><small>Overdue</small><b class="{% if stats.late %}red{% endif %}">{{ stats.late }}</b></div>
-  <div class="stat"><small>Completed</small><b>{{ stats.pct }}%</b><div class="progress"><i style="width:{{ stats.pct }}%"></i></div></div>
-</div>
 <div class="board" data-board data-admin="{% if admin_view %}1{% endif %}">
   {% for col in board %}
   <div class="col" data-status="{{ col.status }}">

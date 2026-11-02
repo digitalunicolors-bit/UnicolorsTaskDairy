@@ -1,79 +1,16 @@
-{# Expects: t (task), admin_view (bool), show_member (bool) #}
+{# Expects: t (task), show_member (bool). Everything else, including actions, is in the task pop-up. #}
 {% load notiftags %}
-<div class="card" id="task-{{ t.pk }}" data-id="{{ t.pk }}" data-status="{{ t.status }}" data-owner="{% if t|can_work:user %}1{% endif %}">
+<div class="card" id="task-{{ t.pk }}" data-id="{{ t.pk }}" data-open-task="{{ t.pk }}" data-status="{{ t.status }}" data-owner="{% if t|can_work:user %}1{% endif %}" tabindex="0" role="button" aria-label="Open {{ t.title }}">
   <h3>{% if t.is_confidential %}<span title="Confidential">🔒 </span>{% endif %}{{ t.title }}</h3>
-  {% if t.details %}<p>{{ t.details|mentionize }}</p>{% endif %}
-  {% with atts=t.attachments.all %}{% if atts %}
-  <div class="atts">
-    {% for a in atts %}
-      {% if a.kind == "voice" %}
-        <div class="att voice"><span class="small">🎙 Voice note</span><audio controls preload="none" src="{% url 'attachment' a.pk %}"></audio></div>
-      {% else %}
-        <a class="att {% if a.kind == 'work' %}att-work{% endif %}" href="{% url 'attachment' a.pk %}" target="_blank" rel="noopener">📎 {{ a.original_name|truncatechars:34 }} <span class="muted">{{ a.size_label }}</span></a>
-      {% endif %}
-    {% endfor %}
-  </div>
-  {% endif %}{% endwith %}
-  {% if t.status == "hold" %}<div class="note hold"><b>{{ t.get_hold_kind_display }}{% if t.hold_since %} since {{ t.hold_since|date:"j M" }}{% endif %}:</b> {{ t.hold_note|urlize }}</div>{% endif %}
-  {% if t.status == "change" and t.admin_note %}<div class="note change"><b>Changes requested:</b> {{ t.admin_note|urlize }}</div>{% endif %}
-  {% if t.member_note and t.status == "review" or t.member_note and t.status == "done" %}<div class="note upd"><b>{% if admin_view %}{{ t.assignee.display_name }}'s note{% else %}Your note{% endif %}:</b> {{ t.member_note|urlize }}</div>{% endif %}
+  {% if t.client or t.priority == "high" or t.status == "hold" %}
   <div class="meta">
     {% if t.client %}<span class="pill client">{{ t.client.name }}</span>{% endif %}
-    <span class="pill p-{{ t.priority }}">{{ t.get_priority_display }}</span>
-    <span class="pill {% if t.is_late %}late{% endif %}">{% if t.is_late %}Overdue · {% else %}Due {% endif %}{{ t.due_date|date:"j M" }}</span>
-    {% if show_member %}<span class="pill who">{{ t.assignee.display_name }}{% with n=t.collaborators.all|length %}{% if n %} +{{ n }}{% endif %}{% endwith %}</span>{% endif %}
-    {% if show_member and t.assigned_by_id == t.assignee_id %}<span class="pill" title="Added by the person doing it">Self-added</span>{% endif %}
-    {% if t.estimated_hours %}<span class="pill" title="Estimated time">⏱ {{ t.estimated_hours|floatformat:"-1" }}h</span>{% endif %}
-    {% with p=t.subtask_progress %}{% if p %}<span class="pill" title="Checklist">☑ {{ p.done }}/{{ p.total }}</span>{% endif %}{% endwith %}
-    {% if t.comment_count %}<span class="pill" title="Comments">💬 {{ t.comment_count }}</span>{% endif %}
-    {% if t.recurring_id %}<span class="pill" title="Created by a recurring schedule">↻ Repeats</span>{% endif %}
+    {% if t.priority == "high" %}<span class="pill p-high">High</span>{% endif %}
+    {% if t.status == "hold" %}<span class="pill">{{ t.get_hold_kind_display }}</span>{% endif %}
   </div>
-  <div class="times">
-    {% if t.submitted_at %}Submitted {{ t.submitted_at|date:"j M, g:i A" }}{% endif %}
-    {% if t.status == "done" and t.done_at %} · Approved {{ t.done_at|date:"j M, g:i A" }}{% if t.approved_by %} by {{ t.approved_by.display_name }}{% endif %}{% endif %}
-    {% if t.change_count %} · {{ t.change_count }} change request{{ t.change_count|pluralize }}{% endif %}
-  </div>
-
-  <div class="actions">
-    {% if t|is_worker:user %}
-      {% if t.status == "todo" %}
-        <form method="post" action="{% url 'task_action' t.pk 'start' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="sm">Start</button></form>
-      {% endif %}
-      {% if t.status == "todo" or t.status == "progress" or t.status == "change" %}
-        <details class="inline">
-          <summary class="btn sm primary">Mark complete</summary>
-          <form method="post" action="{% url 'task_action' t.pk 'submit' %}">{% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <textarea name="note" rows="2" maxlength="1000" placeholder="Optional: what you did, file link…"></textarea>
-            <button class="sm primary">Submit for approval</button>
-          </form>
-        </details>
-      {% endif %}
-    {% endif %}
-
-    {% if admin_view and t|can_manage:user %}
-      {% if t.status == "review" and t|can_approve:user %}
-        <form method="post" action="{% url 'task_action' t.pk 'approve' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="sm ok">Approve</button></form>
-      {% endif %}
-      {% if t.status == "review" or t.status == "done" %}
-        <details class="inline">
-          <summary class="btn sm warn">{% if t.status == "done" %}Reopen{% else %}Request changes{% endif %}</summary>
-          <form method="post" action="{% url 'task_action' t.pk 'changes' %}">{% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <textarea name="note" rows="2" maxlength="1000" required placeholder="What needs to change?"></textarea>
-            <button class="sm warn">Send</button>
-          </form>
-        </details>
-      {% endif %}
-      <details class="inline">
-        <summary class="btn sm danger">Archive</summary>
-        <form method="post" action="{% url 'task_action' t.pk 'delete' %}">{% csrf_token %}
-          <input type="hidden" name="next" value="{{ request.get_full_path }}">
-          <span class="small">Remove from the board? Everything is kept and it can be restored.</span>
-          <input type="text" name="note" maxlength="500" placeholder="Reason (optional)">
-          <button class="sm danger">Archive task</button>
-        </form>
-      </details>
-    {% endif %}
+  {% endif %}
+  <div class="card-foot">
+    <span class="card-who">{% if show_member %}{{ t.assignee.display_name }}{% with n=t.collaborators.all|length %}{% if n %} +{{ n }}{% endif %}{% endwith %}{% if t.assigned_by_id == t.assignee_id %} · self-added{% endif %}{% endif %}</span>
+    <span class="card-due {% if t.is_late %}late{% endif %}">{% if t.is_late %}Overdue, {% endif %}{{ t.due_date|date:"j M" }}</span>
   </div>
 </div>

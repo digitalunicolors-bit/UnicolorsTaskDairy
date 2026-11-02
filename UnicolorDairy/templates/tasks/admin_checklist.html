@@ -14,13 +14,13 @@
   <ul id="np-list" class="np-list"></ul>
 
   <form id="np-add" class="np-add">
-    <input id="np-new" type="text" placeholder="Add New Task Here" autocomplete="off">
+    <input id="np-new" type="text" placeholder="Add a task" autocomplete="off">
     <button type="submit" class="np-btn np-primary">+ Add</button>
   </form>
 
   <div class="np-actions">
     <button type="button" id="save-btn" class="np-btn np-primary">Save</button>
-    <button type="button" id="clear-done" class="np-btn np-light">Remove Done Tasks</button>
+    <button type="button" id="clear-done" class="np-btn np-light">Remove done tasks</button>
     <span class="np-hint">Auto-save on</span>
   </div>
     <details id="np-history" class="np-history">
@@ -191,7 +191,7 @@
       list.append(li);
     });
     if (!shown) {
-      list.innerHTML = '<li class="np-empty">Abhi koi task nahi hai – neeche add karo 👇</li>';
+      list.innerHTML = '<li class="np-empty">No tasks yet. Add one below.</li>';
     }
     updateCount();
     renderHistory();
@@ -216,7 +216,7 @@
     const days = Object.keys(groups).sort().reverse();   // naya din upar
     document.getElementById("np-hcount").textContent = count ? `(${count})` : "";
     if (!days.length) {
-      hlist.innerHTML = '<p class="np-empty">empty history</p>';
+      hlist.innerHTML = '<p class="np-empty">No history yet.</p>';
       return;
     }
 
@@ -255,9 +255,9 @@
         del.type = "button";
         del.className = "np-del";
         del.textContent = "×";
-        del.title = "Hamesha ke liye delete";
+        del.title = "Delete permanently";
         del.onclick = () => {
-          if (confirm("Ye task hamesha ke liye delete karna hai?")) {
+          if (confirm("Delete this task permanently?")) {
             items.splice(i, 1); render(); save();
           }
         };
@@ -277,7 +277,7 @@
     return fetch(url, { method: "POST", headers: { "X-CSRFToken": csrf }, body: data })
       .then(r => r.json())
       .then(d => { status.textContent = "Saved " + d.saved_at; })
-      .catch(() => { status.textContent = "Save nahi hua – dobara try karo"; });
+      .catch(() => { status.textContent = "Couldn't save. Please try again."; });
   }
 
   function queueSave() {

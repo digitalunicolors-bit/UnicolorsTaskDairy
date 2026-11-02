@@ -8,10 +8,14 @@
     <h2 class="my-h">{{ greeting }}, {{ user.first_name|default:user.display_name }}</h2>
     <p class="muted small">{{ today|date:"l, j F Y" }} · {{ focus.open }} open task{{ focus.open|pluralize }} across the team</p>
   </div>
+  <div class="top-actions">
   <form method="get" action="{% url 'search' %}" class="search-bar my-search" role="search">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
     <input type="search" name="q" placeholder="Search tasks, briefs and comments…" aria-label="Search tasks">
   </form>
+  {% if user.is_admin %}<a class="btn" href="{% url 'recurring' %}">↻ Recurring</a>{% endif %}
+  <button type="button" class="primary" data-open-assign>+ New task</button>
+  </div>
 </div>
 
 {# ---------- needs your attention ---------- #}
@@ -41,8 +45,8 @@
 
 {# ---------- requests for more time ---------- #}
 {% if pending_extensions %}
-<div class="panel queue">
-  <h2>Asking for more time</h2>
+<details class="panel queue fold">
+  <summary class="fold-head"><h2>Asking for more time</h2><span class="count">{{ pending_extensions|length }}</span><span class="assign-chevron" aria-hidden="true">▾</span></summary>
   {% for e in pending_extensions %}
     <div class="q-row" data-open-task="{{ e.task.pk }}" tabindex="0" role="button" aria-label="Open {{ e.task.title }}">
       <span class="avatar sm">{{ e.task.assignee.initials }}</span>
@@ -53,13 +57,13 @@
       <div class="q-actions"><button type="button" class="sm" onclick="openTaskModal({{ e.task.pk }})">Review</button></div>
     </div>
   {% endfor %}
-</div>
+</details>
 {% endif %}
 
 {# ---------- requests from the team ---------- #}
 {% if task_requests %}
-<div class="panel queue">
-  <h2>Task requests from the team</h2>
+<details class="panel queue fold">
+  <summary class="fold-head"><h2>Task requests from the team</h2><span class="count">{{ task_requests|length }}</span><span class="assign-chevron" aria-hidden="true">▾</span></summary>
   {% for r in task_requests %}
     <div class="req-row">
       <div class="q-main">
@@ -76,16 +80,14 @@
       </form>
     </div>
   {% endfor %}
-</div>
+</details>
 {% endif %}
 
 {# ---------- approval queue ---------- #}
 {% if queue %}
-<div class="panel queue">
-  <div class="row-between">
-    <h2>Waiting for your approval <small>oldest first</small></h2>
-    {% if focus.review > queue|length %}<a class="link small" href="?show=review">See all {{ focus.review }} →</a>{% endif %}
-  </div>
+<details class="panel queue fold">
+  <summary class="fold-head"><h2>Waiting for your approval</h2><span class="count">{{ focus.review }}</span><span class="assign-chevron" aria-hidden="true">▾</span></summary>
+  {% if focus.review > queue|length %}<a class="link small" href="?show=review">See all {{ focus.review }}</a>{% endif %}
   {% for t in queue %}
     <div class="q-row" data-open-task="{{ t.pk }}" tabindex="0" role="button" aria-label="Open {{ t.title }}">
       <span class="avatar sm">{{ t.assignee.initials }}</span>
@@ -107,7 +109,7 @@
       </div>
     </div>
   {% endfor %}
-</div>
+</details>
 {% endif %}
 
 {# ---------- team workload ---------- #}
@@ -128,15 +130,57 @@
 </div>
 {% endif %}
 
-{# ---------- assign a task (collapsible) ---------- #}
-<details class="panel assign-panel" id="assignPanel" open>
-  <summary class="assign-summary">
-    <h2>Assign a task</h2>
-    <span class="row">
-      {% if user.is_admin %}<a class="btn sm" href="{% url 'recurring' %}">↻ Recurring tasks</a>{% endif %}
-      <span class="assign-chevron" aria-hidden="true">▾</span>
-    </span>
-  </summary>
+
+<form method="get" class="controls board-filters" id="filters">
+  <input type="hidden" name="mode" value="range">
+  <label class="inline">Show
+    <select name="show" onchange="this.form.submit()">
+      <option value="today" {% if show == 'today' %}selected{% endif %}>Today</option>
+      <option value="week" {% if show == 'week' %}selected{% endif %}>Last 7 days</option>
+      <option value="month" {% if show == 'month' %}selected{% endif %}>This month</option>
+      <option value="custom" {% if show == 'custom' %}selected{% endif %}>Choose dates</option>
+      <optgroup label="By status (any date)">
+        <option value="open" {% if show == 'open' %}selected{% endif %}>All open tasks</option>
+        <option value="review" {% if show == 'review' %}selected{% endif %}>Waiting for approval</option>
+        <option value="overdue" {% if show == 'overdue' %}selected{% endif %}>Overdue</option>
+        <option value="changes" {% if show == 'changes' %}selected{% endif %}>Changes requested</option>
+        <option value="hold" {% if show == 'hold' %}selected{% endif %}>On hold</option>
+      </optgroup>
+    </select>
+  </label>
+  {% if show == 'custom' %}
+    <label class="inline">From<input type="date" name="start" value="{{ start|date:'Y-m-d' }}" data-range></label>
+    <label class="inline">To<input type="date" name="end" value="{{ end|date:'Y-m-d' }}" data-range></label>
+  {% endif %}
+  <details class="filter-more" {% if member_id != 'all' or client_id != 'all' %}open{% endif %}>
+    <summary class="btn">Filters{% if member_id != 'all' or client_id != 'all' %} (on){% endif %}</summary>
+    <div class="filter-more-body">
+      <label class="inline">Person
+        <select name="member" onchange="this.form.submit()">
+          <option value="all">Everyone</option>
+          {% for m in members %}<option value="{{ m.id }}" {% if member_id == m.id|stringformat:'s' %}selected{% endif %}>{{ m.display_name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="inline">Client
+        <select name="client" onchange="this.form.submit()">
+          <option value="all">All clients</option>
+          {% for c in clients %}<option value="{{ c.id }}" {% if client_id == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+  </details>
+  {% if show != 'today' or member_id != 'all' or client_id != 'all' %}<a class="btn clear-btn" href="{% url 'dashboard' %}">✕ Clear</a>{% endif %}
+  <noscript><button class="sm">Apply</button></noscript>
+</form>
+
+{% include "tasks/_board.html" with admin_view=True show_member=True %}
+
+<dialog class="modal form-dialog" id="assignPanel" aria-label="New task">
+  <div class="modal-inner">
+    <div class="td-head">
+      <div class="td-head-text"><h2>New task</h2></div>
+      <button type="button" class="td-close" data-close-dialog aria-label="Close">✕</button>
+    </div>
   <form method="post" action="{% url 'assign_task' %}" class="form-grid" enctype="multipart/form-data">
     {% csrf_token %}
     <label class="t">Task{{ form.title }}</label>
@@ -185,68 +229,22 @@
     </div>
     <div class="full"><button class="primary" type="submit">Assign task</button></div>
   </form>
-</details>
-
-<form method="get" class="controls" id="filters">
-  <label class="inline">Show
-    <select name="show" onchange="this.form.submit()">
-      <option value="today" {% if show == 'today' %}selected{% endif %}>Today</option>
-      <option value="week" {% if show == 'week' %}selected{% endif %}>Last 7 days</option>
-      <option value="month" {% if show == 'month' %}selected{% endif %}>Whole month</option>
-      <option value="custom" {% if show == 'custom' %}selected{% endif %}>Custom dates</option>
-      <optgroup label="By status (any date)">
-        <option value="open" {% if show == 'open' %}selected{% endif %}>All open tasks</option>
-        <option value="review" {% if show == 'review' %}selected{% endif %}>Waiting for approval</option>
-        <option value="overdue" {% if show == 'overdue' %}selected{% endif %}>Overdue</option>
-        <option value="changes" {% if show == 'changes' %}selected{% endif %}>Changes requested</option>
-        <option value="hold" {% if show == 'hold' %}selected{% endif %}>On hold</option>
-      </optgroup>
-    </select>
-  </label>
-
-  <input type="hidden" name="mode" value="{{ mode }}">
-  <label class="inline">Date<input type="date" name="date" value="{% if mode == 'single' %}{{ day|date:'Y-m-d' }}{% endif %}" data-single></label>
-  <span class="or">or</span>
-  <label class="inline">From<input type="date" name="start" value="{% if mode == 'range' %}{{ start|date:'Y-m-d' }}{% endif %}" data-range></label>
-  <label class="inline">To<input type="date" name="end" value="{% if mode == 'range' %}{{ end|date:'Y-m-d' }}{% endif %}" data-range></label>
-
-  <label class="inline">Member
-    <select name="member" onchange="this.form.submit()">
-      <option value="all">Everyone</option>
-      {% for m in members %}<option value="{{ m.id }}" {% if member_id == m.id|stringformat:'s' %}selected{% endif %}>{{ m.display_name }}</option>{% endfor %}
-    </select>
-  </label>
-  <label class="inline">Client
-    <select name="client" onchange="this.form.submit()">
-      <option value="all">All clients</option>
-      {% for c in clients %}<option value="{{ c.id }}" {% if client_id == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <a class="btn clear-btn {% if show == 'today' and member_id == 'all' %}is-default{% endif %}" href="{% url 'dashboard' %}" title="Back to today, everyone">✕ Clear filters</a>
-  <noscript><button class="sm">Apply</button></noscript>
-</form>
-<p class="muted small" style="margin:-4px 0 12px">
-  {% if mode == 'list' %}Showing <b>{{ list_label }}</b>{% if member_id != 'all' %} for the selected member{% endif %}
-  {% elif mode == 'range' %}Showing tasks due from <b>{{ start|date:"d M Y" }}</b> to <b>{{ end|date:"d M Y" }}</b>
-  {% else %}Showing tasks for <b>{{ day|date:"d M Y" }}</b>{% endif %}
-</p>
-
-{% include "tasks/_board.html" with admin_view=True show_member=True %}
+  </div>
+</dialog>
 {{ mention_people|json_script:"assign-people" }}
 {% endblock %}
 
 {% block scripts %}{% load static %}
 <script src="{% static 'js/voice.js' %}"></script>
 <script>
-// Remember whether the "Assign a task" panel is open or folded.
+// The New task pop-up.
 (function () {
-  const p = document.getElementById("assignPanel");
-  if (!p) return;
-  try { if (localStorage.getItem("assignPanelOpen") === "0") p.open = false; } catch (e) {}
-  if (location.hash === "#assignPanel") p.open = true;  // arrived from the calendar to assign work
-  p.addEventListener("toggle", () => { try { localStorage.setItem("assignPanelOpen", p.open ? "1" : "0"); } catch (e) {} });
-  // Clicking the Recurring link inside the header shouldn't fold the panel.
-  p.querySelector("summary a")?.addEventListener("click", e => e.stopPropagation());
+  const dlg = document.getElementById("assignPanel");
+  if (!dlg) return;
+  const open = () => { if (!dlg.open) dlg.showModal(); };
+  document.querySelectorAll("[data-open-assign]").forEach(b => b.addEventListener("click", open));
+  dlg.addEventListener("click", e => { if (e.target === dlg || e.target.closest("[data-close-dialog]")) dlg.close(); });
+  if (location.hash === "#assignPanel") open();  // arrived from the calendar to assign work on a day
   // The Lead choice only matters for a shared task.
   const shared = document.getElementById("id_shared"), lead = document.getElementById("id_lead");
   if (shared && lead) { const sync = () => { lead.hidden = !shared.checked; }; shared.addEventListener("change", sync); sync(); }
@@ -257,25 +255,12 @@
 if (window.Mentions) Mentions.attach(document.getElementById("id_details"), Mentions.readPeople("assign-people"));
 </script>
 <script>
-// Picking a single date, or both From and To, switches "Show" to "Custom dates".
+// Changing either date updates the board once both are filled in.
 (function () {
   const f = document.getElementById("filters");
   if (!f) return;
-  f.querySelector("[data-single]").addEventListener("change", e => {
-    if (!e.target.value) return;
-    f.start.value = f.end.value = "";
-    f.mode.value = "single";
-    f.show.value = "custom";
-    f.submit();
-  });
   f.querySelectorAll("[data-range]").forEach(el => el.addEventListener("change", () => {
-    f.end.min = f.start.value;
-    if (!f.start.value) { f.start.focus(); return; }   // wait until both dates are picked
-    if (!f.end.value) { f.end.focus(); return; }
-    f.date.value = "";
-    f.mode.value = "range";
-    f.show.value = "custom";
-    f.submit();
+    if (f.start.value && f.end.value) f.submit();
   }));
 })();
 </script>

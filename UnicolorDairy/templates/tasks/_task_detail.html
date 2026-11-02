@@ -15,18 +15,24 @@
     <button type="button" class="td-close" data-close aria-label="Close">✕</button>
   </div>
 
-  <div class="td-grid">
+  <div class="td-grid td-key">
     <div><small>Assigned to</small><b><span class="avatar xs">{{ t.assignee.initials }}</span>{{ t.assignee.display_name }}</b>{% if t.assignee.designation %}<span class="muted small">{{ t.assignee.designation }}</span>{% endif %}</div>
-    {% with co=t.collaborators.all %}{% if co %}<div><small>Working with</small><b>{% for p in co %}{{ p.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</b></div>{% endif %}{% endwith %}
-    <div><small>Assigned by</small><b>{{ t.assigned_by.display_name|default:"—" }}</b></div>
     <div><small>Due date</small><b class="{% if t.is_late %}red{% endif %}">{{ t.due_date|date:"D, j M Y" }}</b>{% if t.due_date_moved %}<span class="muted small">First due {{ t.original_due_date|date:"j M" }}</span>{% endif %}{% if away_on_due %}<span class="muted small">{{ t.assignee.display_name }} is on leave that day</span>{% endif %}</div>
-    {% if t.estimated_hours or t.actual_hours %}<div><small>Time</small><b>{% if t.estimated_hours %}{{ t.estimated_hours|floatformat:"-1" }}h estimated{% endif %}{% if t.actual_hours %}{% if t.estimated_hours %} · {% endif %}{{ t.actual_hours|floatformat:"-1" }}h actual{% endif %}</b></div>{% endif %}
-    <div><small>Created</small><b>{{ t.created_at|date:"j M Y, g:i A" }}</b></div>
-    <div><small>Started</small><b>{{ t.started_at|date:"j M Y, g:i A"|default:"Not started" }}</b></div>
-    <div><small>Submitted</small><b>{{ t.submitted_at|date:"j M Y, g:i A"|default:"—" }}</b></div>
-    <div><small>Approved</small><b>{% if t.done_at %}{{ t.done_at|date:"j M Y, g:i A" }}{% if t.approved_by %} · {{ t.approved_by.display_name }}{% endif %}{% else %}—{% endif %}</b></div>
-    <div><small>Change requests</small><b>{{ t.change_count }}</b></div>
+    {% with co=t.collaborators.all %}{% if co %}<div><small>Working with</small><b>{% for p in co %}{{ p.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</b></div>{% endif %}{% endwith %}
   </div>
+
+  <details class="td-more">
+    <summary>Details</summary>
+    <div class="td-grid">
+      <div><small>Assigned by</small><b>{{ t.assigned_by.display_name|default:"—" }}</b></div>
+      {% if t.estimated_hours or t.actual_hours %}<div><small>Time</small><b>{% if t.estimated_hours %}{{ t.estimated_hours|floatformat:"-1" }}h estimated{% endif %}{% if t.actual_hours %}{% if t.estimated_hours %}, {% endif %}{{ t.actual_hours|floatformat:"-1" }}h actual{% endif %}</b></div>{% endif %}
+      <div><small>Created</small><b>{{ t.created_at|date:"j M Y, g:i A" }}</b></div>
+      <div><small>Started</small><b>{{ t.started_at|date:"j M Y, g:i A"|default:"Not started" }}</b></div>
+      <div><small>Submitted</small><b>{{ t.submitted_at|date:"j M Y, g:i A"|default:"—" }}</b></div>
+      <div><small>Approved</small><b>{% if t.done_at %}{{ t.done_at|date:"j M Y, g:i A" }}{% if t.approved_by %} by {{ t.approved_by.display_name }}{% endif %}{% else %}—{% endif %}</b></div>
+      <div><small>Change requests</small><b>{{ t.change_count }}</b></div>
+    </div>
+  </details>
 
   <section>
     <h3>Brief</h3>

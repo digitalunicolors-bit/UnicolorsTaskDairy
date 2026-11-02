@@ -12,10 +12,13 @@
       {% if focus.changes %} · {{ focus.changes }} need{{ focus.changes|pluralize:"s," }} changes{% endif %}
     </p>
   </div>
+  <div class="top-actions">
   <form method="get" action="{% url 'search' %}" class="search-bar my-search" role="search">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
     <input type="search" name="q" placeholder="Search tasks, briefs and comments…" aria-label="Search tasks">
   </form>
+  <button type="button" class="primary" data-open-own>+ Add my own task</button>
+  </div>
 </div>
 
 {# ---------- needs your attention ---------- #}
@@ -42,31 +45,6 @@
     <b>{{ focus.tagged }}</b><span>Tagged on</span>
   </a>
 </div>
-
-{# ---------- my month ---------- #}
-<div class="my-month">
-  <span class="muted small">{{ today|date:"F" }}:</span>
-  <span><b>{{ month_summary.done }}</b>/{{ month_summary.assigned }} done</span>
-  <span class="minibar"><i style="width:{{ month_summary.pct }}%"></i></span>
-  <span>On time <b>{{ month_summary.on_time_pct|default_if_none:"—" }}{% if month_summary.on_time_pct is not None %}%{% endif %}</b></span>
-  <span>Approved first time <b>{{ month_summary.first_pass_pct|default_if_none:"—" }}{% if month_summary.first_pass_pct is not None %}%{% endif %}</b></span>
-  <a class="link small" href="{% url 'report' %}">My full report →</a>
-</div>
-
-{# ---------- add my own task ---------- #}
-<details class="panel own-task">
-  <summary class="assign-summary"><h2>Add my own task</h2><span class="assign-chevron" aria-hidden="true">▾</span></summary>
-  <form method="post" action="{% url 'own_task_add' %}" class="form-grid">
-    {% csrf_token %}
-    <label class="t">Task{{ own_task_form.title }}</label>
-    <label>Priority{{ own_task_form.priority }}</label>
-    <label>Due date{{ own_task_form.due_date }}</label>
-    <label>Client / project{{ own_task_form.client }}</label>
-    <label>Estimated hours (optional){{ own_task_form.estimated_hours }}</label>
-    <label class="full">Details{{ own_task_form.details }}</label>
-    <div class="full"><button class="primary" type="submit">Add task</button></div>
-  </form>
-</details>
 
 {# ---------- filters + view switch ---------- #}
 <div class="controls my-controls">
@@ -122,15 +100,48 @@
 <div data-view-panel="board">
   {% include "tasks/_board.html" with admin_view=user.is_admin show_member=is_tagged_view %}
 </div>
+
+{# ---------- my month ---------- #}
+<div class="my-month">
+  <span class="muted small">{{ today|date:"F" }}:</span>
+  <span><b>{{ month_summary.done }}</b>/{{ month_summary.assigned }} done</span>
+  <span class="minibar"><i style="width:{{ month_summary.pct }}%"></i></span>
+  <span>On time <b>{{ month_summary.on_time_pct|default_if_none:"—" }}{% if month_summary.on_time_pct is not None %}%{% endif %}</b></span>
+  <span>Approved first time <b>{{ month_summary.first_pass_pct|default_if_none:"—" }}{% if month_summary.first_pass_pct is not None %}%{% endif %}</b></span>
+  <a class="link small" href="{% url 'report' %}">My full report →</a>
+</div>
+
+<dialog class="modal form-dialog" id="ownTaskDialog" aria-label="Add my own task">
+  <div class="modal-inner">
+    <div class="td-head">
+      <div class="td-head-text"><h2>Add my own task</h2></div>
+      <button type="button" class="td-close" data-close-dialog aria-label="Close">✕</button>
+    </div>
+  <form method="post" action="{% url 'own_task_add' %}" class="form-grid">
+    {% csrf_token %}
+    <label class="t">Task{{ own_task_form.title }}</label>
+    <label>Priority{{ own_task_form.priority }}</label>
+    <label>Due date{{ own_task_form.due_date }}</label>
+    <label>Client / project{{ own_task_form.client }}</label>
+    <label>Estimated hours (optional){{ own_task_form.estimated_hours }}</label>
+    <label class="full">Details{{ own_task_form.details }}</label>
+    <div class="full"><button class="primary" type="submit">Add task</button></div>
+  </form>
+  </div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function () {
-  // Board / List switch – remembered on this browser.
+  const own = document.getElementById("ownTaskDialog");
+  document.querySelector("[data-open-own]").addEventListener("click", () => own.showModal());
+  own.addEventListener("click", e => { if (e.target === own || e.target.closest("[data-close-dialog]")) own.close(); });
+
+  // Board / List switch – remembered on this browser. Phones start on the list, so tasks come first.
   const KEY = "myTasksView";
-  let view = "board";
-  try { view = localStorage.getItem(KEY) || "board"; } catch (e) {}
+  let view = window.innerWidth < 760 ? "list" : "board";
+  try { view = localStorage.getItem(KEY) || view; } catch (e) {}
   function apply(v) {
     view = v;
     document.querySelectorAll("[data-view-panel]").forEach(p => { p.hidden = p.dataset.viewPanel !== v; });
