@@ -170,7 +170,7 @@ def check_code(user, code):
 
 
 def _otpauth_uri(user, secret):
-    label = quote(f"Unicolors Tasks:{user.email or user.username}")
+    label = quote(f"Unicolors Workspace:{user.email or user.username}")
     return f"otpauth://totp/{label}?secret={secret}&issuer=Unicolors%20Tasks&digits=6&period={STEP_SECONDS}"
 
 

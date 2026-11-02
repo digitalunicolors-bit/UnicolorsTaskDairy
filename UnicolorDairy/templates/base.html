@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Unicolors Daily Tasks{% endblock %}</title>
+  <title>{% block title %}Unicolors Workspace{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
@@ -14,10 +14,10 @@
 <div class="wrap">
   <header class="top">
     <div>
-      <h1><a href="{% url 'home' %}"><span>Unicolors</span> Daily Tasks</a>
+      <h1><a href="{% url 'home' %}"><span>Unicolors</span> Workspace</a>
         {% if user.is_authenticated %}<span class="role-badge">{{ user.role_label }}</span>{% endif %}
       </h1>
-      <div class="sub">Assign, track and complete the team's daily work</div>
+      <div class="sub">Assign and track the team's work, and manage leave</div>
     </div>
     {% if user.is_authenticated %}
     <div class="who">

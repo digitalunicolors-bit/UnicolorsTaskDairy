@@ -114,7 +114,7 @@ def _plain_text(ctx):
         lines += [f"{ctx['button']['label']}: {ctx['button']['url']}", ""]
     if ctx["footer"]:
         lines += [ctx["footer"], ""]
-    lines.append("— Unicolors Daily Tasks")
+    lines.append("— Unicolors Workspace")
     return "\n".join(lines)
 
 
@@ -122,7 +122,7 @@ def _send(ctx, recipients, background=None):
     recipients = sorted({r for r in recipients if r})
     if not recipients or not getattr(settings, "EMAIL_NOTIFICATIONS", True):
         return
-    subject = f"[Unicolors Tasks] {ctx['subject']}"
+    subject = f"[Unicolors Workspace] {ctx['subject']}"
     text = _plain_text(ctx)
     html = render_to_string("tasks/email_task.html", ctx)
 
@@ -183,7 +183,7 @@ def task_assigned(task, by):
     if task.recurring_id:
         intro = f"Your recurring task for {task.occurrence_date:%A, %d %b} is ready ({task.recurring.schedule_label})."
     else:
-        intro = f"{by.display_name if by else 'Unicolors Tasks'} assigned you a new task. Here are the details:"
+        intro = f"{by.display_name if by else 'Unicolors Workspace'} assigned you a new task. Here are the details:"
     ctx = _context(
         "assigned",
         subject=f"New task: {task.title}",
@@ -417,7 +417,7 @@ def welcome(user, by, background=False):
     hours = getattr(settings, "INVITE_EXPIRY_HOURS", 72)
 
     rows = [
-        {"label": "Workspace", "value": "Unicolors Daily Tasks", "bold": True},
+        {"label": "Workspace", "value": "Unicolors Workspace", "bold": True},
         {"label": "Your role", "value": user.get_role_display()},
     ]
     if user.designation:
@@ -431,7 +431,7 @@ def welcome(user, by, background=False):
         subject="You're invited to Unicolors Workspace",
         heading="You're invited to join the team",
         greeting_name=user.first_name or user.display_name,
-        intro=f"{by.display_name} invited you to Unicolors Daily Tasks, where the team assigns, tracks and completes daily work.",
+        intro=f"{by.display_name} invited you to Unicolors Workspace, where the team assigns and tracks work and manages leave.",
         rows=rows,
         button={"label": "Join workspace", "url": invite_url},
         footer=f"This invitation link expires in {hours} hours. If it expires, ask your admin to resend it.",

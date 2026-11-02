@@ -1,4 +1,4 @@
-"""Settings for the Unicolors Daily Tasks app. Configure via environment variables (see .env.example)."""
+"""Settings for the Unicolors Workspace app. Configure via environment variables (see .env.example)."""
 import os
 import sys
 import dj_database_url

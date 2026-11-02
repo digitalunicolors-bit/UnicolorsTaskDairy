@@ -7,7 +7,7 @@ from django.apps import AppConfig
 class HomeConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = 'Home'
-    verbose_name = "Unicolors Daily Tasks"
+    verbose_name = "Unicolors Workspace"
 
     def ready(self):
         # Start the daily reminder checker when the website runs –
