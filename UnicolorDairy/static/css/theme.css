@@ -281,3 +281,25 @@ input[type=file]::file-selector-button { background: var(--surface2); color: var
     .cal-task { padding: 7px 9px; font-size: 13.5px; }
 }
 .cal-top > .my-h { font-size: clamp(26px, 3.4vw, 38px); font-weight: 700; }
+
+/* ---------- compact header and navigation ---------- */
+.wrap { padding-top: 12px; }
+.top { padding-bottom: 8px; }
+.top h1 { font-size: 19px; }
+.role-badge { font-size: 11px; padding: 2px 8px; margin-left: 8px; }
+.who { font-size: 12.5px; gap: 8px; }
+.who form button { padding: 4px 10px; font-size: 12.5px; }
+.who .avatar { width: 26px; height: 26px; font-size: 10.5px; }
+.notif-btn { width: 30px; height: 30px; padding: 0; }
+.notif-btn svg { width: 16px; height: 16px; }
+.tabs { gap: 2px; margin-bottom: 18px; }
+.tab { padding: 5px 12px; font-size: 13.5px; line-height: 1.4; }
+.my-top { margin-top: 0; }
+.my-h, .team-h, .rep-h, .cal-top > .my-h { font-size: clamp(22px, 2.4vw, 28px); }
+@media (max-width: 860px) {
+    .wrap { padding-top: 10px; }
+    .tab { padding: 5px 11px; }
+}
+.who > *, .who .notif { align-self: center; }
+.who .avatar { flex: none; }
+.notif-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 0; border-radius: 50%; }
