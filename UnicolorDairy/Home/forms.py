@@ -339,7 +339,7 @@ class HolidayForm(forms.ModelForm):
         fields = ["date", "name"]
         widgets = {
             "date": forms.DateInput(attrs={"type": "date"}),
-            "name": forms.TextInput(attrs={"placeholder": "e.g. Diwali"}),
+            "name": forms.TextInput(attrs={"placeholder": "e.g. Annual office day"}),
         }
 
 

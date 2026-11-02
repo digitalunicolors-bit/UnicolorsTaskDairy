@@ -2,7 +2,7 @@ import base64
 import os
 import tempfile
 import time
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest import mock
 
@@ -14,10 +14,10 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from . import recurring, reminders, reports, security
+from . import indian_holidays, recurring, reminders, reports, security
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, LoginAttempt, Notification, RecurringTask, Subtask, Task,
-    TaskComment, TaskRequest, User, next_working_day, on_leave_ids,
+    TaskComment, TaskRequest, User, is_office_closed, next_working_day, on_leave_ids,
 )
 
 
@@ -747,6 +747,63 @@ class CorporateTests(TestCase):
         n = Notification.objects.filter(recipient=self.lead).first()
         self.client.force_login(self.lead)
         self.assertRedirects(self.client.get(reverse("notification_open", args=[n.pk])), reverse("leave_approvals"))
+
+    # ---- Indian holiday calendar
+
+    def test_calendar_applies_nothing_until_an_admin_ticks_it(self):
+        self.assertFalse(Holiday.objects.exists())
+        self.client.force_login(self.admin)
+        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 12, 1)):
+            self.assertContains(self.client.get(reverse("calendar")), "Republic Day")
+        self.assertFalse(Holiday.objects.exists())
+
+    def test_admin_ticks_and_team_sees_only_those(self):
+        day = date(2027, 1, 26)
+        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 12, 1)):
+            self.post(self.admin, "holiday_catalog_save", data={"holidays": [indian_holidays.key_for(day, "Republic Day")]})
+            self.assertEqual(Holiday.objects.get().name, "Republic Day")
+            self.client.force_login(self.yashi)
+            html = self.client.get(reverse("my_leave")).content.decode()
+            self.assertIn("Republic Day", html)
+            self.assertNotIn("Good Friday", html)
+            self.assertTrue(is_office_closed(day))
+            self.post(self.admin, "holiday_catalog_save", data={})
+            self.assertFalse(Holiday.objects.exists())
+
+    def test_team_member_cannot_change_holidays(self):
+        self.post(self.yashi, "holiday_catalog_save", data={"holidays": [indian_holidays.key_for(date(2027, 1, 26), "Republic Day")]})
+        self.assertFalse(Holiday.objects.exists())
+        self.client.force_login(self.yashi)
+        self.assertRedirects(self.client.get(reverse("calendar")), reverse("my_tasks"))
+
+    def test_several_holidays_on_one_day_and_custom_ones_are_kept(self):
+        day = date(2027, 8, 15)
+        Holiday.objects.create(date=day, name="Office picnic")
+        Holiday.objects.create(date=date(2027, 2, 2), name="Annual day")
+        keys = [indian_holidays.key_for(day, "Independence Day"), indian_holidays.key_for(day, "Parsi New Year")]
+        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 12, 1)):
+            self.post(self.admin, "holiday_catalog_save", data={"holidays": keys})
+            self.assertEqual(Holiday.objects.get(date=day).name, "Office picnic / Independence Day / Parsi New Year")
+            self.client.force_login(self.admin)
+            rows = {r["name"]: r["checked"] for r in self.client.get(reverse("calendar")).context["catalog"] if r["date"] == day}
+            self.assertEqual(rows, {"Independence Day": True, "Milad-un-Nabi": False, "Parsi New Year": True})
+            self.post(self.admin, "holiday_catalog_save", data={})
+        self.assertEqual(Holiday.objects.get(date=day).name, "Office picnic")
+        self.assertEqual(Holiday.objects.get(date=date(2027, 2, 2)).name, "Annual day")
+
+    def test_made_up_or_past_holidays_are_ignored(self):
+        with mock.patch("django.utils.timezone.localdate", return_value=date(2027, 6, 1)):
+            self.post(self.admin, "holiday_catalog_save", data={"holidays": ["2027-07-01|Fake day", indian_holidays.key_for(date(2027, 1, 26), "Republic Day")]})
+        self.assertFalse(Holiday.objects.exists())
+
+    def test_holiday_list_is_clean(self):
+        seen = set()
+        for day, name, kind in indian_holidays.HOLIDAYS:
+            self.assertNotIn((day, name), seen)
+            seen.add((day, name))
+            self.assertNotIn(indian_holidays.SEPARATOR, name)
+            self.assertIn(kind, indian_holidays.KIND_LABELS)
+            self.assertLessEqual(day, indian_holidays.COVERS_UNTIL)
 
     def test_health_check_is_public(self):
         self.assertEqual(self.client.get(reverse("healthz")).status_code, 200)

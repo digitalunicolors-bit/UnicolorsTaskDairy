@@ -139,7 +139,7 @@ class Holiday(models.Model):
     """A day the office is closed."""
 
     date = models.DateField(unique=True)
-    name = models.CharField(max_length=120)
+    name = models.CharField(max_length=255)
 
     class Meta:
         ordering = ["date"]

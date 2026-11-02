@@ -13,7 +13,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from . import notifications, reports
+from . import indian_holidays, notifications, reports
 from .forms import ClientForm, HolidayForm, LeaveForm, LeaveRequestForm, MultipleFileField, OwnTaskForm, _check_size
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, Notification, Subtask, Task, TaskActivity,
@@ -301,7 +301,16 @@ def calendar_page(request):
             if count:
                 messages.warning(request, f"{leave.user.display_name} has {count} task{'s' if count != 1 else ''} due during this leave. Reassign them or move the dates.")
             return redirect("calendar")
+    chosen = {h.date: h.name.split(indian_holidays.SEPARATOR) for h in Holiday.objects.filter(date__gte=today)}
     return render(request, "tasks/calendar.html", {
+        "catalog": [
+            {
+                "key": indian_holidays.key_for(day, name), "date": day, "name": name, "kind": kind,
+                "kind_label": indian_holidays.KIND_LABELS[kind], "checked": name in chosen.get(day, []),
+            }
+            for day, name, kind in indian_holidays.upcoming(today)
+        ],
+        "catalog_until": indian_holidays.COVERS_UNTIL,
         "holiday_form": holiday_form,
         "leave_form": leave_form,
         "holidays": Holiday.objects.filter(date__gte=today - timedelta(days=30)),
@@ -309,6 +318,44 @@ def calendar_page(request):
         "pending_leave_count": leaves_managed_by(request.user).filter(status=Leave.Status.PENDING).count(),
         "today": today,
     })
+
+
+@admin_required
+@require_POST
+def holiday_catalog_save(request):
+    """Make the office holidays match what the admin ticked. Holidays they typed themselves are left alone."""
+    today = timezone.localdate()
+    ticked = set(request.POST.getlist("holidays"))
+    by_day = {}
+    for day, name, _ in indian_holidays.upcoming(today):
+        by_day.setdefault(day, []).append(name)
+    added, removed = [], []
+    for day, names in by_day.items():
+        holiday = Holiday.objects.filter(date=day).first()
+        current = holiday.name.split(indian_holidays.SEPARATOR) if holiday else []
+        wanted = [n for n in names if indian_holidays.key_for(day, n) in ticked]
+        custom = [n for n in current if n not in names]
+        final = custom + wanted
+        added += [(day, n) for n in wanted if n not in current]
+        removed += [n for n in current if n in names and n not in wanted]
+        if not final:
+            if holiday:
+                holiday.delete()
+        elif holiday:
+            if final != current:
+                holiday.name = indian_holidays.SEPARATOR.join(final)
+                holiday.save(update_fields=["name"])
+        else:
+            Holiday.objects.create(date=day, name=indian_holidays.SEPARATOR.join(final))
+    if added or removed:
+        messages.success(request, f"Office holidays updated: {len(added)} added, {len(removed)} removed.")
+    else:
+        messages.info(request, "No changes to the office holidays.")
+    new_days = {day for day, _ in added}
+    busy = Task.objects.filter(status__in=Task.NEEDS_WORK, due_date__in=new_days).count() if new_days else 0
+    if busy:
+        messages.warning(request, f"{busy} open task{'s are' if busy != 1 else ' is'} due on the holidays you just added. Check those dates.")
+    return redirect("calendar")
 
 
 @admin_required
@@ -364,7 +411,7 @@ def my_leave(request):
     return render(request, "tasks/leave.html", {
         "form": form,
         "my_requests": user.leaves.select_related("decided_by", "cover", "approver")[:30],
-        "holidays": Holiday.objects.filter(date__gte=today)[:20],
+        "holidays": Holiday.objects.filter(date__gte=today)[:40],
         "today": today,
         "pending_leave_count": leaves_managed_by(user).filter(status=Leave.Status.PENDING).count() if user.is_lead else 0,
     })

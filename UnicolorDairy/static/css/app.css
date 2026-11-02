@@ -3221,3 +3221,21 @@ button[hidden] { display: none; }
 .leave-actions input[type=text] { flex: 1 1 200px; min-width: 0; }
 .leave-actions select { width: auto; max-width: 100%; }
 .own-task { margin-bottom: 14px; }
+
+.cal-sub { margin: 16px 0 4px; font-size: 13px; }
+.hol-list { margin-top: 12px; }
+.hol-row { display: grid; grid-template-columns: auto 150px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 4px; border-top: 1px solid var(--line); font-weight: 500; cursor: pointer; }
+.hol-row[hidden] { display: none; }
+.hol-row input { width: 16px; height: 16px; margin: 0; }
+.hol-date { color: var(--muted); font-size: 13px; }
+.hol-name { overflow-wrap: anywhere; }
+.pill.hol-national { color: var(--c-done); background: color-mix(in srgb, var(--c-done) 14%, transparent); }
+.pill.hol-central { color: var(--c-prog); background: color-mix(in srgb, var(--c-prog) 12%, transparent); }
+.pill.hol-gujarat { color: var(--c-review); background: color-mix(in srgb, var(--c-review) 14%, transparent); }
+.hol-save { margin-top: 12px; align-items: center; }
+@media (max-width: 600px) {
+  .hol-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .hol-date { grid-column: 2; grid-row: 2; }
+  .hol-name { grid-column: 2; grid-row: 1; }
+  .hol-row .pill { grid-column: 3; grid-row: 1 / span 2; }
+}

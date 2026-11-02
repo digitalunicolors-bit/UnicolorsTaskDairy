@@ -3,7 +3,7 @@
 {% include "tasks/_leave_tabs.html" with active="calendar" %}
 <div class="rep-charts">
   <div class="panel">
-    <h2>Office holidays</h2>
+    <h2>Add your own office holiday</h2>
     <form method="post" class="form-grid two-col">
       {% csrf_token %}
       <input type="hidden" name="kind" value="holiday">
@@ -12,6 +12,7 @@
       {% for f in holiday_form %}{% for e in f.errors %}<div class="err full">{{ e }}</div>{% endfor %}{% endfor %}
       <div class="full"><button class="primary">Add holiday</button></div>
     </form>
+    <h3 class="cal-sub">Office holidays the team can see</h3>
     {% for h in holidays %}
       <div class="rec-row">
         <div class="grow"><b>{{ h.name }}</b> <span class="muted small">{{ h.date|date:"D, j M Y" }}</span></div>
@@ -42,4 +43,62 @@
     <p class="muted small">While someone is on approved leave, they get no reminders, recurring tasks skip them and admins are told, and they're marked on the dashboard.</p>
   </div>
 </div>
+
+<div class="panel" id="indianCalendar">
+  <h2>Indian holiday calendar <small>tick the days your office is closed, up to {{ catalog_until|date:"F Y" }}</small></h2>
+  <p class="muted small">Only ticked days become office holidays and show to the team. Moon-based dates such as Id and Muharram can shift, so check them closer to the day. If a date differs, untick it and add your own above.</p>
+  <div class="team-tabs" role="group" aria-label="Filter holidays">
+    <button type="button" class="team-tab on" data-hol-filter="all">All</button>
+    <button type="button" class="team-tab" data-hol-filter="national">National</button>
+    <button type="button" class="team-tab" data-hol-filter="central">Central govt</button>
+    <button type="button" class="team-tab" data-hol-filter="gujarat">Gujarat</button>
+    <button type="button" class="team-tab" data-hol-filter="optional">Optional</button>
+    <button type="button" class="team-tab" data-hol-filter="ticked">Ticked</button>
+  </div>
+  <form method="post" action="{% url 'holiday_catalog_save' %}">
+    {% csrf_token %}
+    <div class="hol-list">
+      {% for h in catalog %}
+        <label class="hol-row" data-kind="{{ h.kind }}">
+          <input type="checkbox" name="holidays" value="{{ h.key }}" {% if h.checked %}checked{% endif %}>
+          <span class="hol-date">{{ h.date|date:"D, j M Y" }}</span>
+          <span class="hol-name">{{ h.name }}</span>
+          <span class="pill hol-{{ h.kind }}">{{ h.kind_label }}</span>
+        </label>
+      {% empty %}<p class="muted small">No dates left in this calendar. It needs the next year's list added.</p>{% endfor %}
+    </div>
+    <div class="row hol-save">
+      <button class="primary" type="submit">Save office holidays</button>
+      <span class="muted small" data-hol-count></span>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const root = document.getElementById("indianCalendar");
+  if (!root) return;
+  const rows = [...root.querySelectorAll(".hol-row")];
+  const buttons = [...root.querySelectorAll("[data-hol-filter]")];
+  const count = root.querySelector("[data-hol-count]");
+  let filter = "all";
+  function apply() {
+    rows.forEach(r => {
+      const on = r.querySelector("input").checked;
+      r.hidden = !(filter === "all" || (filter === "ticked" ? on : r.dataset.kind === filter));
+    });
+    const n = rows.filter(r => r.querySelector("input").checked).length;
+    count.textContent = n + " ticked";
+  }
+  buttons.forEach(b => b.addEventListener("click", () => {
+    filter = b.dataset.holFilter;
+    buttons.forEach(x => x.classList.toggle("on", x === b));
+    apply();
+  }));
+  root.addEventListener("change", apply);
+  apply();
+})();
+</script>
 {% endblock %}
