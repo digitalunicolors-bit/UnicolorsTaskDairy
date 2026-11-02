@@ -53,28 +53,6 @@
   <a class="link small" href="{% url 'report' %}">My full report →</a>
 </div>
 
-{# ---------- add a task or ask for one ---------- #}
-<details class="panel member-add">
-  <summary class="assign-summary"><h2>➕ Add a task or ask for one</h2><span class="assign-chevron" aria-hidden="true">▾</span></summary>
-  <form method="post" action="{% url 'member_task_add' %}" class="form-grid">
-    {% csrf_token %}
-    <div class="full radio-row">{% for r in member_form.kind %}<label class="check">{{ r.tag }} {{ r.choice_label }}</label>{% endfor %}</div>
-    <label class="t">Task{{ member_form.title }}</label>
-    <label>Priority{{ member_form.priority }}</label>
-    <label>Due date{{ member_form.due_date }}</label>
-    <label>Client / project{{ member_form.client }}</label>
-    <label>Estimated hours{{ member_form.estimated_hours }}</label>
-    <label class="full">Details{{ member_form.details }}</label>
-    <div class="full"><button class="primary" type="submit">Save</button></div>
-  </form>
-  {% if my_requests %}
-    <h3>Your requests</h3>
-    {% for r in my_requests %}
-      <div class="muted small">{{ r.title }} · <b>{{ r.get_status_display }}</b>{% if r.decision_note %} · {{ r.decision_note }}{% endif %}</div>
-    {% endfor %}
-  {% endif %}
-</details>
-
 {# ---------- filters + view switch ---------- #}
 <div class="controls my-controls">
   <form method="get">

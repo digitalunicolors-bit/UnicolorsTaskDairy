@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django import forms
 from django.conf import settings
+from django.db.models import Q
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
@@ -296,26 +297,6 @@ class TaskEditForm(forms.ModelForm):
         self.fields["assignee"].empty_label = None
 
 
-class MemberTaskForm(forms.Form):
-    """A team member adding their own task, or asking for one."""
-
-    KIND_CHOICES = [("self", "I'll do this myself"), ("request", "Ask for this to be assigned")]
-
-    kind = forms.ChoiceField(choices=KIND_CHOICES, initial="self", widget=forms.RadioSelect)
-    title = forms.CharField(max_length=200, widget=forms.TextInput(attrs={"placeholder": "What needs doing?"}))
-    client = _client_field()
-    priority = forms.ChoiceField(choices=Task.Priority.choices, initial=Task.Priority.MEDIUM)
-    due_date = forms.DateField(required=False, label="Due date", widget=forms.DateInput(attrs={"type": "date"}))
-    estimated_hours = _hours_field()
-    details = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2, "placeholder": "Details (optional)"}))
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("kind") == "self" and not cleaned.get("due_date"):
-            self.add_error("due_date", "Pick a due date for your task.")
-        return cleaned
-
-
 class ClientForm(forms.ModelForm):
     class Meta:
         model = Client
@@ -344,8 +325,9 @@ class LeaveRequestForm(forms.ModelForm):
 
     class Meta:
         model = Leave
-        fields = ["kind", "start_date", "end_date", "note", "cover"]
-        labels = {"kind": "Type of leave", "start_date": "From", "end_date": "To", "note": "Reason", "cover": "Who can cover? (optional)"}
+        fields = ["kind", "start_date", "end_date", "approver", "note", "cover"]
+        labels = {"kind": "Type of leave", "start_date": "From", "end_date": "To", "note": "Reason",
+                  "cover": "Who can cover? (optional)", "approver": "Send for approval to"}
         widgets = {
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
@@ -357,6 +339,16 @@ class LeaveRequestForm(forms.ModelForm):
         self.user = user
         self.fields["note"].required = True
         self.fields["kind"].initial = Leave.Kind.CASUAL
+        people = User.objects.filter(is_active=True).filter(
+            Q(role__in=[User.Role.ADMIN, User.Role.MANAGER]) | Q(is_superuser=True)
+        ).exclude(pk=user.pk)
+        self.fields["approver"].queryset = people
+        self.fields["approver"].required = people.exists()  # the only admin has nobody to ask
+        self.fields["approver"].empty_label = "Choose a person…"
+        self.fields["approver"].label_from_instance = lambda u: f"{u.display_name} ({u.role_label})"
+        self.fields["approver"].error_messages["required"] = "Choose who should approve this."
+        if user.manager_id and people.filter(pk=user.manager_id).exists():
+            self.fields["approver"].initial = user.manager_id
         self.fields["cover"].required = False
         self.fields["cover"].queryset = User.objects.filter(is_active=True).exclude(pk=user.pk)
         self.fields["cover"].empty_label = "Not sure"

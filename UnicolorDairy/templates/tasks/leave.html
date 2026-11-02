@@ -11,11 +11,12 @@
       <label>To{{ form.end_date }}{% for e in form.end_date.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
       <label>Type of leave{{ form.kind }}</label>
       <label>Who can cover? (optional){{ form.cover }}</label>
+      <label class="full">Send for approval to{{ form.approver }}{% for e in form.approver.errors %}<span class="err">{{ e }}</span>{% endfor %}{% if user.manager %}<span class="muted small">{{ user.manager.display_name }}, your reporting manager, is emailed as well.</span>{% endif %}</label>
       <label class="full">Reason{{ form.note }}{% for e in form.note.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
       <div class="full leave-check" id="leaveCheck" aria-live="polite" hidden></div>
       <div class="full"><button class="primary">Send request</button></div>
     </form>
-    <p class="muted small">Your {% if user.manager %}team lead or an {% endif %}admin decides. Nothing changes until it's approved. Your reason is only shown to the people who approve leave.</p>
+    <p class="muted small">The person you choose gets an email{% if user.manager %}, and so does your reporting manager{% endif %}. Nothing changes until it's approved. Your reason is only shown to the people who approve leave.</p>
   </div>
   <div class="panel">
     <h2>Office holidays</h2>
@@ -31,6 +32,7 @@
       <div class="grow">
         <b>{{ l.start_date|date:"j M" }}{% if l.days > 1 %} – {{ l.end_date|date:"j M Y" }}{% else %} {{ l.start_date|date:"Y" }}{% endif %}</b>
         <span class="muted small">{{ l.days }} day{{ l.days|pluralize }} · {{ l.get_kind_display }}{% if l.note %} · {{ l.note }}{% endif %}</span>
+        {% if l.status == "pending" and l.approver %}<div class="muted small">Sent to {{ l.approver.display_name }}</div>{% endif %}
         {% if l.decided_by and l.status != "pending" %}<div class="muted small">{{ l.get_status_display }} by {{ l.decided_by.display_name }}{% if l.decision_note %}: {{ l.decision_note }}{% endif %}</div>{% endif %}
       </div>
       <span class="leave-status {{ l.status }}">{{ l.get_status_display }}</span>

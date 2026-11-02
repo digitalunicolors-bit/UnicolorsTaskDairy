@@ -43,7 +43,7 @@ class User(AbstractUser):
 
     @property
     def role_label(self):
-        return "Owner" if self.is_superuser else self.get_role_display()
+        return "Admin" if self.is_superuser else self.get_role_display()
 
     def can_manage_person(self, other):
         """The owner manages everyone. Admins manage themselves and non-admins."""
@@ -118,7 +118,7 @@ def leaves_managed_by(user):
     """Leave this person can decide: everyone else's for admins, their own team's for team leads."""
     if user.is_admin:
         return Leave.objects.exclude(user=user)
-    return Leave.objects.filter(user__manager=user)
+    return Leave.objects.filter(models.Q(user__manager=user) | models.Q(approver=user)).exclude(user=user)
 
 
 class Client(models.Model):
@@ -169,6 +169,10 @@ class Leave(models.Model):
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OTHER)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPROVED, db_index=True)
     cover = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    approver = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="leaves_to_approve",
+        help_text="The person this request was sent to",
+    )
     decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     decided_at = models.DateTimeField(null=True, blank=True)
     decision_note = models.CharField(max_length=500, blank=True)
@@ -192,15 +196,19 @@ class Leave(models.Model):
         )
 
     def approvers(self):
-        """Who can decide this: the person's team lead and all admins, never the person themselves."""
-        people = [p for p in active_admins() if p.pk != self.user_id]
+        """Who is asked to decide: the person they picked and their reporting manager, never themselves.
+        Requests with nobody picked go to all admins and the reporting manager."""
+        picked = self.approver if self.approver_id and self.approver.is_active else None
+        people = [picked] if picked else [p for p in active_admins() if p.pk != self.user_id]
         lead = self.user.manager
         if lead and lead.is_active and lead.pk != self.user_id and all(p.pk != lead.pk for p in people):
             people.append(lead)
         return people
 
     def can_decide(self, user):
-        return user.pk != self.user_id and (user.is_admin or self.user.manager_id == user.pk)
+        return user.pk != self.user_id and (
+            user.is_admin or self.user.manager_id == user.pk or self.approver_id == user.pk
+        )
 
     def tasks_due(self):
         return Task.objects.filter(

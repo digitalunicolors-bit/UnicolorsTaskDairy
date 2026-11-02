@@ -441,21 +441,16 @@ class CorporateTests(TestCase):
         rows = self.client.get(reverse("dashboard")).context["workload"]
         self.assertEqual(next(w for w in rows if w["user"] == self.yashi)["hours"], Decimal("6.5"))
 
-    def test_member_can_add_own_task_and_request_one(self):
-        self.post(self.yashi, "member_task_add", data={"kind": "self", "title": "Mine", "priority": "low", "due_date": self.today.isoformat()})
-        t = Task.objects.get()
-        self.assertEqual((t.assignee, t.assigned_by), (self.yashi, self.yashi))
-        self.post(self.yashi, "member_task_add", data={"kind": "self", "title": "No date", "priority": "low"})
-        self.assertEqual(Task.objects.count(), 1)
-        self.post(self.yashi, "member_task_add", data={"kind": "request", "title": "Please", "priority": "low"})
-        req = TaskRequest.objects.get()
-        self.assertEqual(self.post(self.niyati, "request_decide", req.pk, "accept").status_code, 302)
-        req.refresh_from_db()
-        self.assertEqual(req.status, "pending")
+    def test_add_a_task_form_is_gone_for_team_members(self):
+        self.client.force_login(self.yashi)
+        self.assertNotContains(self.client.get(reverse("my_tasks")), "Add a task or ask for one")
+        self.assertEqual(self.client.post("/my-tasks/add/", {"kind": "self", "title": "x"}).status_code, 404)
+
+    def test_requests_already_sent_can_still_be_decided(self):
+        req = TaskRequest.objects.create(title="Please", requested_by=self.yashi)
         self.post(self.lead, "request_decide", req.pk, "accept", data={"assignee": self.yashi.pk, "due_date": self.today.isoformat()})
         req.refresh_from_db()
         self.assertEqual(req.status, "accepted")
-        self.assertEqual(req.task.assignee, self.yashi)
 
     # ---- security
 
@@ -588,7 +583,8 @@ class CorporateTests(TestCase):
     def apply(self, user, days=(1, 2), **extra):
         return self.post(user, "my_leave", data={
             "kind": "casual", "start_date": (self.today + timedelta(days=days[0])).isoformat(),
-            "end_date": (self.today + timedelta(days=days[1])).isoformat(), "note": "Family function", **extra,
+            "end_date": (self.today + timedelta(days=days[1])).isoformat(), "note": "Family function",
+            "approver": (self.admin2 if user == self.admin else self.admin).pk, **extra,
         })
 
     def test_team_member_can_see_page_and_apply(self):
@@ -601,12 +597,15 @@ class CorporateTests(TestCase):
         self.apply(self.yashi, cover=self.niyati.pk)
         leave = Leave.objects.get()
         self.assertEqual((leave.user, leave.status, leave.cover), (self.yashi, "pending", self.niyati))
+        self.assertEqual(leave.approver, self.admin)
         self.assertTrue(Notification.objects.filter(recipient=self.lead, verb="leave").exists())
         self.assertTrue(Notification.objects.filter(recipient=self.admin, verb="leave").exists())
-        self.assertTrue(any("Leave request" in m.subject for m in mail.outbox))
+        self.assertFalse(Notification.objects.filter(recipient=self.admin2, verb="leave").exists())
+        sent_to = {m.to[0] for m in mail.outbox if "Leave request" in m.subject}
+        self.assertEqual(sent_to, {self.admin.email, self.lead.email})  # the person picked, and the reporting manager
 
     def test_pending_leave_changes_nothing_until_approved(self):
-        self.post(self.yashi, "my_leave", data={"kind": "casual", "start_date": self.today.isoformat(), "end_date": self.today.isoformat(), "note": "x"})
+        self.post(self.yashi, "my_leave", data={"kind": "casual", "start_date": self.today.isoformat(), "end_date": self.today.isoformat(), "note": "x", "approver": self.admin.pk})
         leave = Leave.objects.get()
         self.assertNotIn(self.yashi.pk, on_leave_ids(self.today))
         self.post(self.lead, "leave_decide", leave.pk, "approve", data={"note": "Enjoy"})
@@ -690,9 +689,38 @@ class CorporateTests(TestCase):
         t.refresh_from_db()
         self.assertEqual(t.assignee, self.niyati)
 
+    def test_approver_must_be_picked_and_must_be_an_admin_or_lead(self):
+        self.apply(self.yashi, approver="")
+        self.assertFalse(Leave.objects.exists())
+        self.apply(self.yashi, approver=self.niyati.pk)
+        self.assertFalse(Leave.objects.exists())
+        self.apply(self.yashi, approver=self.yashi.pk)
+        self.assertFalse(Leave.objects.exists())
+
+    def test_reporting_manager_is_suggested_first(self):
+        self.client.force_login(self.yashi)
+        form = self.client.get(reverse("my_leave")).context["form"]
+        self.assertEqual(form.fields["approver"].initial, self.lead.pk)
+
+    def test_a_team_lead_picked_by_someone_else_can_decide(self):
+        lead2 = User.objects.create_user("lead2", "l2@example.com", "pass12345!", role=User.Role.MANAGER)
+        self.apply(self.yashi, approver=lead2.pk)
+        leave = Leave.objects.get()
+        self.client.force_login(lead2)
+        self.assertContains(self.client.get(reverse("leave_approvals")), "Family function")
+        self.post(lead2, "leave_decide", leave.pk, "approve")
+        leave.refresh_from_db()
+        self.assertEqual((leave.status, leave.decided_by), ("approved", lead2))
+
+    def test_badge_says_admin_not_owner(self):
+        self.client.force_login(self.owner)
+        html = self.client.get(reverse("dashboard")).content.decode()
+        self.assertIn('<span class="role-badge">Admin</span>', html)
+        self.assertNotIn("Owner", html)
+
     def test_sole_admin_is_not_stuck(self):
         User.objects.exclude(pk=self.owner.pk).update(is_active=False)
-        self.apply(self.owner)
+        self.apply(self.owner, approver="")
         self.assertEqual(Leave.objects.get().status, "approved")
 
     def test_leave_notification_links_to_the_right_page(self):

@@ -14,10 +14,10 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import notifications, reports
-from .forms import ClientForm, HolidayForm, LeaveForm, LeaveRequestForm, MemberTaskForm, MultipleFileField, _check_size
+from .forms import ClientForm, HolidayForm, LeaveForm, LeaveRequestForm, MultipleFileField, _check_size
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, Notification, Subtask, Task, TaskActivity,
-    TaskAttachment, TaskRequest, User, active_admins, is_office_closed, leaves_managed_by, people_managed_by,
+    TaskAttachment, TaskRequest, User, leaves_managed_by, people_managed_by,
 )
 from .views import S, _log, _safe_next, _parse_date, admin_required, manager_required, needs_handover
 
@@ -363,7 +363,7 @@ def my_leave(request):
         return redirect("my_leave")
     return render(request, "tasks/leave.html", {
         "form": form,
-        "my_requests": user.leaves.select_related("decided_by", "cover")[:30],
+        "my_requests": user.leaves.select_related("decided_by", "cover", "approver")[:30],
         "holidays": Holiday.objects.filter(date__gte=today)[:20],
         "today": today,
         "pending_leave_count": leaves_managed_by(user).filter(status=Leave.Status.PENDING).count() if user.is_lead else 0,
@@ -409,7 +409,7 @@ def leave_cancel(request, pk):
 def leave_approvals(request):
     """Leave waiting for a decision, with what each person's absence would affect."""
     today = timezone.localdate()
-    scope = leaves_managed_by(request.user).select_related("user", "cover", "decided_by")
+    scope = leaves_managed_by(request.user).select_related("user", "cover", "decided_by", "approver")
     pending = []
     for leave in scope.filter(status=Leave.Status.PENDING).order_by("start_date"):
         others = scope.filter(
@@ -488,46 +488,7 @@ def leave_reassign(request, pk):
     return redirect("leave_approvals")
 
 
-# ---------------------------------------------------------------- tasks from team members
-
-
-@login_required
-@require_POST
-def member_task_add(request):
-    form = MemberTaskForm(request.POST)
-    if not form.is_valid():
-        for errors in form.errors.values():
-            for e in errors:
-                messages.error(request, e)
-        return redirect("my_tasks")
-    data = form.cleaned_data
-    user = request.user
-    if data["kind"] == "self":
-        task = Task.objects.create(
-            title=data["title"], details=data["details"], priority=data["priority"], due_date=data["due_date"],
-            assignee=user, assigned_by=user, client=data["client"], estimated_hours=data["estimated_hours"],
-        )
-        _log(task, user, TaskActivity.Action.ASSIGNED, "Added by the person doing it")
-        Notification.send(task, user, "assigned", recipients=task.overseers())
-        messages.success(request, f'Added "{task.title}" to your tasks. It still goes for approval when it\'s done.')
-        if is_office_closed(task.due_date):
-            messages.warning(request, f"{task.due_date:%a, %d %b} is a day the office is closed.")
-    else:
-        req = TaskRequest.objects.create(
-            title=data["title"], details=data["details"], priority=data["priority"], wanted_by=data["due_date"],
-            client=data["client"], requested_by=user,
-        )
-        people = list(active_admins())
-        if user.manager and user.manager.is_active and all(p.pk != user.manager_id for p in people):
-            people.append(user.manager)
-        Notification.objects.bulk_create([
-            Notification(recipient=p, actor=user, verb=Notification.Verb.REQUEST,
-                         message=f"{user.display_name} asked for a task: “{req.title}”"[:300])
-            for p in people if p.pk != user.pk
-        ])
-        notifications.task_request_received(req, [p for p in people if p.pk != user.pk])
-        messages.success(request, "Request sent. You'll be told when it's decided.")
-    return redirect("my_tasks")
+# ---------------------------------------------------------------- task requests already sent
 
 
 @manager_required

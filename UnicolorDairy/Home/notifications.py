@@ -289,20 +289,6 @@ def extension_decided(ext):
     _send(ctx, _worker_emails(task))
 
 
-def task_request_received(req, people):
-    who = req.requested_by.display_name
-    ctx = _context(
-        "request",
-        subject=f"Task request: {req.title}",
-        heading=req.title,
-        greeting_name="team",
-        intro=f"{who} asked for this task to be added.",
-        notes=[{"label": "Details", "text": req.details, "color": "#2f6fde"}],
-        button={"label": "Review request", "url": _url("dashboard")},
-    )
-    _send(ctx, [p.email for p in people])
-
-
 def _leave_rows(leave):
     return [
         {"label": "Person", "value": leave.user.display_name, "bold": True},
@@ -319,7 +305,9 @@ def leave_requested(leave, people):
         heading="New leave request",
         greeting_name="team",
         intro=f"{leave.user.display_name} applied for leave and needs a decision.",
-        rows=_leave_rows(leave),
+        rows=_leave_rows(leave) + (
+            [{"label": "Sent to", "value": leave.approver.display_name}] if leave.approver_id else []
+        ),
         notes=[{"label": "Reason", "text": leave.note, "color": "#2a9d5c"}],
         button={"label": "Review request", "url": _url("leave_approvals")},
     )

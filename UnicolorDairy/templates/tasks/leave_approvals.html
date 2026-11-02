@@ -9,6 +9,7 @@
         <div><b>{{ l.user.display_name }}</b> <span class="muted small">{{ l.get_kind_display }}</span></div>
         <b>{{ l.start_date|date:"D, j M" }}{% if l.days > 1 %} – {{ l.end_date|date:"D, j M Y" }}{% endif %} <span class="muted small">{{ l.days }} day{{ l.days|pluralize }}</span></b>
       </div>
+      {% if l.approver %}<div class="small">Sent to: {% if l.approver == user %}you{% else %}{{ l.approver.display_name }}{% endif %}</div>{% endif %}
       <div class="small">Reason: {{ l.note|default:"—" }}</div>
       {% if l.cover %}<div class="small">Suggested cover: {{ l.cover.display_name }}</div>{% endif %}
       {% if row.tasks %}

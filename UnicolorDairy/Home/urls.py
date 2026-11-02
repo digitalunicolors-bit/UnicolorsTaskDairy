@@ -53,7 +53,6 @@ urlpatterns = [
     path("leave/<int:pk>/cancel/", views_more.leave_cancel, name="leave_cancel"),
     path("leave/<int:pk>/reassign/", views_more.leave_reassign, name="leave_reassign"),
     path("leave/<int:pk>/<str:decision>/", views_more.leave_decide, name="leave_decide"),
-    path("my-tasks/add/", views_more.member_task_add, name="member_task_add"),
     path("requests/<int:pk>/<str:decision>/", views_more.request_decide, name="request_decide"),
 
     # search & recurring tasks

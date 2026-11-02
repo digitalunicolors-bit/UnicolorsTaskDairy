@@ -3186,9 +3186,6 @@ table.sortable th.desc::after {
 .req-row .q-main { flex: 1 1 240px; min-width: 0; }
 .assign-options { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; font-weight: 400; }
 .assign-options select { width: auto; max-width: 100%; }
-.radio-row { display: flex; flex-wrap: wrap; gap: 8px 18px; }
-.member-add { margin-bottom: 14px; }
-.member-add h3 { margin: 14px 0 4px; font-size: 13px; }
 .banner.warning { background: color-mix(in srgb, var(--c-review) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c-review) 40%, transparent); color: var(--ink); padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; }
 .ok-text { color: var(--c-done); }
 .setup-steps { padding-left: 20px; }
@@ -3205,7 +3202,7 @@ table.sortable th.desc::after {
 .form-grid.two-col input, .form-grid.two-col select { width: 100%; min-width: 0; }
 label.check { display: flex; flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
 label.check input { width: auto; flex: none; margin: 0; }
-.radio-row label.check input, .assign-options label.check input { width: 16px; height: 16px; }
+.assign-options label.check input { width: 16px; height: 16px; }
 button[hidden] { display: none; }
 
 .leave-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
