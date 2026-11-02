@@ -12,7 +12,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from . import indian_holidays, recurring, reminders, reports
+from . import indian_holidays, recurring, reminders, reports, summaries
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, LoginAttempt, Notification, RecurringTask, Subtask, Task,
     TaskComment, TaskRequest, User, is_office_closed, next_working_day, on_leave_ids,
@@ -563,7 +563,7 @@ class CorporateTests(TestCase):
         Leave.objects.create(user=self.yashi, start_date=self.today, end_date=self.today)
         for user in (self.owner, self.admin, self.lead, self.yashi, self.niyati):
             self.client.force_login(user)
-            for name in ["home", "dashboard", "my_tasks", "report", "team", "clients", "calendar", "archive", "recurring", "notification_list", "my_leave", "leave_approvals"]:
+            for name in ["home", "dashboard", "my_tasks", "report", "team", "clients", "calendar", "archive", "recurring", "notification_list", "my_leave", "leave_approvals", "schedule"]:
                 resp = self.client.get(reverse(name), follow=True)
                 self.assertEqual(resp.status_code, 200, (user.username, name))
             for t in tasks:
@@ -780,6 +780,153 @@ class CorporateTests(TestCase):
             self.assertNotIn(indian_holidays.SEPARATOR, name)
             self.assertIn(kind, indian_holidays.KIND_LABELS)
             self.assertLessEqual(day, indian_holidays.COVERS_UNTIL)
+
+    # ---- monthly calendar
+
+    def day_cell(self, resp, day):
+        return next(d for w in resp.context["weeks"] for d in w if d["date"] == day)
+
+    def test_calendar_shows_deadlines_holidays_and_only_approved_leave(self):
+        day = self.today + timedelta(days=1)
+        self.task(title="Deadline", due_date=day)
+        Holiday.objects.create(date=day, name="Festival")
+        Leave.objects.create(user=self.yashi, start_date=day, end_date=day)
+        Leave.objects.create(user=self.niyati, start_date=day, end_date=day, status=Leave.Status.PENDING)
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("schedule"), {"month": f"{day:%Y-%m}"})
+        cell = self.day_cell(resp, day)
+        self.assertEqual([t.title for t in cell["tasks"]], ["Deadline"])
+        self.assertEqual(cell["holiday"], "Festival")
+        self.assertEqual(cell["away"], [self.yashi])
+        self.assertEqual(cell["clashes"], 1)
+        self.assertContains(resp, "Festival")
+
+    def test_calendar_scope_by_role(self):
+        day = self.today
+        self.task(title="Yashi work", due_date=day)
+        self.task(title="Niyati work", assignee=self.niyati, due_date=day)
+        Leave.objects.create(user=self.niyati, start_date=day, end_date=day, note="Private reason")
+        for user, sees, hidden in [
+            (self.admin, ["Yashi work", "Niyati work"], []),
+            (self.lead, ["Yashi work"], ["Niyati work"]),
+            (self.yashi, ["Yashi work"], ["Niyati work"]),
+            (self.niyati, ["Niyati work"], ["Yashi work"]),
+        ]:
+            self.client.force_login(user)
+            resp = self.client.get(reverse("schedule"))
+            html = resp.content.decode()
+            for title in sees:
+                self.assertIn(title, html, user)
+            for title in hidden:
+                self.assertNotIn(title, html, user)
+            self.assertNotIn("Private reason", html)
+        self.client.force_login(self.yashi)
+        self.assertEqual(self.day_cell(self.client.get(reverse("schedule")), day)["away"], [])
+
+    def test_calendar_filters_and_bad_input(self):
+        c = Client.objects.create(name="Peanutji")
+        self.task(title="Client one", client=c)
+        self.task(title="Other one", assignee=self.niyati)
+        self.client.force_login(self.admin)
+        html = self.client.get(reverse("schedule"), {"client": c.pk}).content.decode()
+        self.assertIn("Client one", html)
+        self.assertNotIn("Other one", html)
+        html = self.client.get(reverse("schedule"), {"member": self.niyati.pk}).content.decode()
+        self.assertIn("Other one", html)
+        self.assertNotIn("Client one", html)
+        self.assertEqual(self.client.get(reverse("schedule"), {"month": "junk", "member": "x", "client": "y"}).status_code, 200)
+        self.client.force_login(self.yashi)
+        html = self.client.get(reverse("schedule"), {"member": self.niyati.pk}).content.decode()
+        self.assertNotIn("Other one", html)
+
+    def test_calendar_link_prefills_the_assign_date(self):
+        day = self.today + timedelta(days=3)
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("dashboard"), {"due": day.isoformat()})
+        self.assertEqual(resp.context["form"].initial["due_date"], day)
+
+    def test_archived_tasks_stay_off_the_calendar(self):
+        self.task(title="Gone", archived_at=self.now)
+        self.client.force_login(self.admin)
+        self.assertNotContains(self.client.get(reverse("schedule")), "Gone")
+
+    # ---- morning summary
+
+    def working_day(self):
+        day = self.today
+        while day.weekday() == 6:
+            day += timedelta(days=1)
+        return day
+
+    def test_summary_has_due_and_overdue_for_each_person(self):
+        day = self.working_day()
+        self.task(title="Late one", due_date=day - timedelta(days=2))
+        self.task(title="Today one", due_date=day)
+        self.task(title="Later one", due_date=day + timedelta(days=5))
+        self.task(title="On hold one", due_date=day - timedelta(days=2), status="hold")
+        mail.outbox.clear()
+        self.assertEqual(summaries.send_morning_summaries(day), 1)
+        m = mail.outbox[0]
+        self.assertEqual(m.to, [self.yashi.email])
+        self.assertIn("1 overdue", m.subject)
+        self.assertIn("1 due today", m.subject)
+        self.assertIn("Late one", m.body)
+        self.assertIn("Today one", m.body)
+        self.assertNotIn("Later one", m.body)
+        self.assertNotIn("On hold one", m.body)
+
+    def test_summary_shows_approvals_to_admins_and_team_leads(self):
+        day = self.working_day()
+        self.task(title="Yashi done", status="review", submitted_at=self.now, due_date=day)
+        self.task(title="Niyati done", assignee=self.niyati, status="review", submitted_at=self.now, due_date=day)
+        Leave.objects.create(user=self.yashi, start_date=day + timedelta(days=2), end_date=day + timedelta(days=2), status=Leave.Status.PENDING)
+        mail.outbox.clear()
+        summaries.send_morning_summaries(day)
+        by_person = {m.to[0]: m for m in mail.outbox}
+        self.assertIn("2 to approve", by_person[self.admin.email].subject)
+        self.assertIn("1 leave request", by_person[self.admin.email].subject)
+        self.assertIn("1 to approve", by_person[self.lead.email].subject)
+        self.assertIn("Yashi done", by_person[self.lead.email].body)
+        self.assertNotIn("Niyati done", by_person[self.lead.email].body)
+        self.assertNotIn(self.yashi.email, by_person)  # nothing due, and waiting isn't their job
+
+    def test_admin_is_not_asked_to_approve_their_own_work(self):
+        day = self.working_day()
+        self.task(title="Own work", assignee=self.admin, status="review", submitted_at=self.now, due_date=day)
+        summary = summaries.build_summary(self.admin, day)
+        self.assertEqual(summary["approvals"], [])
+        self.assertEqual([t.title for t in summaries.build_summary(self.admin2, day)["approvals"]], ["Own work"])
+
+    def test_summary_sends_once_a_day(self):
+        day = self.working_day()
+        self.task(due_date=day)
+        self.assertEqual(summaries.send_morning_summaries(day), 1)
+        self.assertEqual(summaries.send_morning_summaries(day), 0)
+
+    def test_no_summary_on_closed_days_or_while_on_leave(self):
+        sunday = self.today + timedelta(days=(6 - self.today.weekday()) or 7)
+        self.task(due_date=sunday)
+        self.assertEqual(summaries.send_morning_summaries(sunday), 0)
+        day = sunday + timedelta(days=1)
+        Holiday.objects.create(date=day, name="Festival")
+        self.task(due_date=day)
+        self.assertEqual(summaries.send_morning_summaries(day), 0)
+        day2 = day + timedelta(days=1)
+        self.task(due_date=day2)
+        Leave.objects.create(user=self.yashi, start_date=day2, end_date=day2)
+        self.assertEqual(summaries.send_morning_summaries(day2), 0)
+
+    def test_nothing_to_report_means_no_email(self):
+        mail.outbox.clear()
+        self.assertEqual(summaries.send_morning_summaries(self.working_day()), 0)
+        self.assertEqual(mail.outbox, [])
+
+    def test_failed_summary_is_listed_for_admins(self):
+        day = self.working_day()
+        self.task(due_date=day)
+        with mock.patch("django.core.mail.message.EmailMessage.send", side_effect=RuntimeError("down")):
+            summaries.send_morning_summaries(day)
+        self.assertEqual(EmailFailure.objects.get().recipient, self.yashi.email)
 
     def test_health_check_is_public(self):
         self.assertEqual(self.client.get(reverse("healthz")).status_code, 200)

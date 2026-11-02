@@ -220,6 +220,17 @@ class LoginAttempt(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
 
+class DailySummary(models.Model):
+    """Records each morning summary, so a person only ever gets one a day."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    date = models.DateField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "date"], name="unique_daily_summary")]
+
+
 class EmailFailure(models.Model):
     """An email that could not be sent, shown to admins on the Team page."""
 

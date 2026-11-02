@@ -1,6 +1,7 @@
 """Daily background jobs while the website is running:
 
   • RECURRING_HOUR (default 8 AM): create today's recurring tasks
+  • SUMMARY_HOUR (default 9 AM): the morning summary email, until SUMMARY_LAST_HOUR (default noon)
   • REMINDER_HOUR:REMINDER_MINUTE (default 10:00 AM): due-date reminders + overdue alerts to admins
 
 Change the time in settings.py (24-hour clock): REMINDER_HOUR = 16 and REMINDER_MINUTE = 35 means 4:35 PM.
@@ -33,9 +34,11 @@ def start():
 def _loop():
     from .recurring import create_recurring_tasks
     from .reminders import send_due_reminders, send_overdue_alerts
+    from .summaries import send_morning_summaries
 
     last_run = None
     last_created = None
+    last_summary = None
     time.sleep(10)  # let the server finish starting
     while True:
         try:
@@ -46,6 +49,14 @@ def _loop():
                 made = create_recurring_tasks(now.date())
                 last_created = now.date()
                 log.info("Recurring tasks for %s: %s created", now.date(), made)
+
+            # Morning summary. After noon it's no longer a morning summary, so that day's is skipped.
+            summary_from = getattr(settings, "SUMMARY_HOUR", 9)
+            summary_until = getattr(settings, "SUMMARY_LAST_HOUR", 12)
+            if summary_from <= now.hour < summary_until and last_summary != now.date():
+                close_old_connections()
+                send_morning_summaries(now.date())
+                last_summary = now.date()
 
             # 2) Reminders + overdue alerts
             run_at = (getattr(settings, "REMINDER_HOUR", 10), getattr(settings, "REMINDER_MINUTE", 0))

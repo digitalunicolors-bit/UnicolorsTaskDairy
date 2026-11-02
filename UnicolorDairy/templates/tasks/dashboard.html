@@ -243,6 +243,7 @@
   const p = document.getElementById("assignPanel");
   if (!p) return;
   try { if (localStorage.getItem("assignPanelOpen") === "0") p.open = false; } catch (e) {}
+  if (location.hash === "#assignPanel") p.open = true;  // arrived from the calendar to assign work
   p.addEventListener("toggle", () => { try { localStorage.setItem("assignPanelOpen", p.open ? "1" : "0"); } catch (e) {} });
   // Clicking the Recurring link inside the header shouldn't fold the panel.
   p.querySelector("summary a")?.addEventListener("click", e => e.stopPropagation());

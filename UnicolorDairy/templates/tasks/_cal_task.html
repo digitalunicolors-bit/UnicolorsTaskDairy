@@ -1,0 +1,4 @@
+<button type="button" class="cal-task s-line-{{ t.status }} {% if t.is_late %}late{% endif %} {% if t.status == 'done' %}done{% endif %}" onclick="openTaskModal({{ t.pk }})" title="{{ t.title }}: {{ t.assignee.display_name }}, {{ t.get_status_display }}">
+  <span class="cal-task-title">{% if t.is_confidential %}🔒 {% endif %}{{ t.title }}</span>
+  {% if user.is_lead %}<span class="cal-task-who">{{ t.assignee.first_name|default:t.assignee.display_name }}</span>{% endif %}
+</button>

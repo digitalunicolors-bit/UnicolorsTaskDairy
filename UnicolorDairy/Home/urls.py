@@ -46,6 +46,7 @@ urlpatterns = [
     path("calendar/holidays/save/", views_more.holiday_catalog_save, name="holiday_catalog_save"),
     path("calendar/holiday/<int:pk>/delete/", views_more.holiday_delete, name="holiday_delete"),
     path("calendar/leave/<int:pk>/delete/", views_more.leave_delete, name="leave_delete"),
+    path("schedule/", views_more.schedule, name="schedule"),
     path("my-tasks/add/", views_more.own_task_add, name="own_task_add"),
     path("leave/", views_more.my_leave, name="my_leave"),
     path("leave/check/", views_more.leave_check, name="leave_check"),

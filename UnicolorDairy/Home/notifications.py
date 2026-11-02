@@ -36,6 +36,7 @@ STYLES = {
     "extension": ("#b7791f", "#fdf6e9", "📅", "Deadline"),
     "request": ("#2f6fde", "#eef3fd", "🙋", "Task request"),
     "leave": ("#2a9d5c", "#ebf7f0", "🌴", "Leave"),
+    "summary": ("#0B1220", "#FFF4CC", "☀️", "Your day"),
 }
 PRIORITY_COLORS = {"high": "#d93d42", "medium": "#b7791f", "low": "#2a9d5c"}
 
@@ -287,6 +288,57 @@ def extension_decided(ext):
         button={"label": "Open task", "url": _task_link(task, for_admin=False)},
     )
     _send(ctx, _worker_emails(task))
+
+
+MAX_SUMMARY_TASKS = 15
+
+
+def morning_summary(user, summary, today):
+    """One email with everything needing this person's attention today."""
+    items = []
+    for t in summary["overdue"]:
+        days = (today - t.due_date).days
+        items.append((t, f"{days} day{'s' if days != 1 else ''} late", "#fdeeee", "#d93d42", False))
+    for t in summary["today"]:
+        items.append((t, "Due today", "#fdf6e9", "#b7791f", False))
+    for t in summary["approvals"]:
+        items.append((t, "To approve", "#eef3fd", "#2f6fde", True))
+    rows = [
+        {
+            "title": t.title,
+            "who": f"{t.client.name} · {t.assignee.display_name}" if t.client else t.assignee.display_name,
+            "due": f"{t.due_date:%d %b}",
+            "late": label,
+            "pill_bg": bg,
+            "pill_color": color,
+            "status": t.get_status_display(),
+            "url": _task_link(t, for_admin=for_admin),
+        }
+        for t, label, bg, color, for_admin in items[:MAX_SUMMARY_TASKS]
+    ]
+    parts = []
+    if summary["overdue"]:
+        parts.append(f"{len(summary['overdue'])} overdue")
+    if summary["today"]:
+        parts.append(f"{len(summary['today'])} due today")
+    if summary["approvals"]:
+        parts.append(f"{len(summary['approvals'])} to approve")
+    if summary["leave_requests"]:
+        parts.append(f"{summary['leave_requests']} leave request{'s' if summary['leave_requests'] != 1 else ''}")
+    if summary["more_time"]:
+        parts.append(f"{summary['more_time']} asking for more time")
+    extra = len(items) - len(rows)
+    ctx = _context(
+        "summary",
+        subject=f"Your day: {', '.join(parts)}",
+        heading=f"{today:%A, %d %B}",
+        greeting_name=user.first_name or user.display_name,
+        intro="Here's what needs you today: " + ", ".join(parts) + ".",
+        task_list=rows,
+        button={"label": "Open Workspace", "url": _url("home")},
+        footer=f"And {extra} more in the Workspace." if extra else "",
+    )
+    return _send(ctx, [user.email], background=False)
 
 
 def _leave_rows(leave):

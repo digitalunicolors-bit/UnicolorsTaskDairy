@@ -266,7 +266,8 @@ def dashboard(request):
     now = timezone.localtime()
     greeting = "Good morning" if now.hour < 12 else "Good afternoon" if now.hour < 17 else "Good evening"
 
-    form = AssignTaskForm(user=request.user)
+    due = _parse_date(request.GET.get("due"), None)
+    form = AssignTaskForm(user=request.user, initial={"due_date": due} if due else None)
     return render(request, "tasks/dashboard.html", {
         "client_id": client_id,
         "clients": Client.objects.filter(is_active=True),

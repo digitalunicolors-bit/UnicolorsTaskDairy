@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row-between cal-top">
+  <h2 class="my-h">{{ month|date:"F Y" }}</h2>
+  <div class="row cal-nav">
+    <a class="btn" href="{{ prev_url }}" aria-label="Previous month">‹</a>
+    <a class="btn" href="{{ today_url }}">Today</a>
+    <a class="btn" href="{{ next_url }}" aria-label="Next month">›</a>
+  </div>
+</div>
+
+<form method="get" class="controls cal-filters">
+  <input type="hidden" name="month" value="{{ month|date:'Y-m' }}">
+  {% if user.is_lead %}
+  <label class="inline">Person
+    <select name="member" onchange="this.form.submit()">
+      <option value="all">Everyone</option>
+      {% for p in people %}<option value="{{ p.id }}" {% if member_id == p.id|stringformat:'s' %}selected{% endif %}>{{ p.display_name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <label class="inline">Client
+    <select name="client" onchange="this.form.submit()">
+      <option value="all">All clients</option>
+      {% for c in clients %}<option value="{{ c.id }}" {% if client_id == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button class="sm">Apply</button></noscript>
+  <div class="cal-legend muted small">
+    <span><i class="cal-key holiday"></i>Office holiday</span>
+    <span><i class="cal-key leave"></i>On leave</span>
+    <span><i class="cal-key late"></i>Overdue</span>
+    {% if user.is_lead %}<span><i class="cal-key clash"></i>Deadline during leave</span>{% endif %}
+  </div>
+</form>
+
+<div class="cal" role="table" aria-label="Calendar for {{ month|date:'F Y' }}">
+  <div class="cal-head" role="row">{% for d in weekdays %}<div role="columnheader">{{ d }}</div>{% endfor %}</div>
+  {% for week in weeks %}
+    <div class="cal-week" role="row">
+      {% for d in week %}
+        <div role="cell" class="cal-day {% if not d.in_month %}out{% endif %} {% if d.closed %}closed{% endif %} {% if d.is_today %}today{% endif %} {% if d.holiday %}is-holiday{% endif %} {% if d.clashes %}has-clash{% endif %} {% if not d.busy %}quiet{% endif %}">
+          <div class="cal-date">
+            <span class="cal-num">{{ d.date.day }}</span>
+            <span class="cal-weekday">{{ d.date|date:"D, j M" }}</span>
+            {% if d.can_assign %}<a class="cal-add" href="{% url 'dashboard' %}?due={{ d.date|date:'Y-m-d' }}#assignPanel" aria-label="Assign a task due {{ d.date|date:'j F' }}" title="Assign a task due this day">+</a>{% endif %}
+          </div>
+          {% if d.holiday %}<div class="cal-holiday">{{ d.holiday }}</div>{% endif %}
+          {% if d.clashes %}<div class="cal-clash">{{ d.clashes }} due during leave</div>{% endif %}
+          {% for p in d.away %}<div class="cal-leave">{{ p.first_name|default:p.display_name }} on leave</div>{% endfor %}
+          {% for t in d.tasks %}{% include "tasks/_cal_task.html" %}{% endfor %}
+          {% if d.more_tasks %}
+            <details class="cal-more">
+              <summary>{{ d.more_tasks|length }} more</summary>
+              {% for t in d.more_tasks %}{% include "tasks/_cal_task.html" %}{% endfor %}
+            </details>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endfor %}
+</div>
+<p class="muted small cal-note">{% if user.is_admin %}Showing the whole team.{% elif user.is_lead %}Showing your team and your own work.{% else %}Showing your own tasks, your leave and office holidays.{% endif %}</p>
+
+{% include "tasks/_task_modal.html" %}
+{% endblock %}

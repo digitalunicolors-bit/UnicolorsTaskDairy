@@ -1,5 +1,6 @@
 """Pages added for day-to-day corporate use: clients, leave and holidays, archive, extensions,
-member uploads, checklists, task requests and handovers."""
+member uploads, checklists, task requests, handovers and the monthly calendar."""
+import calendar
 import os
 from datetime import timedelta
 
@@ -7,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -18,6 +20,7 @@ from .forms import ClientForm, HolidayForm, LeaveForm, LeaveRequestForm, Multipl
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, Notification, Subtask, Task, TaskActivity,
     TaskAttachment, TaskRequest, User, is_office_closed, leaves_managed_by, on_leave_ids, people_managed_by,
+    weekly_off_days,
 )
 from .views import S, _log, _safe_next, _parse_date, admin_required, manager_required, needs_handover
 
@@ -533,6 +536,96 @@ def leave_reassign(request, pk):
         moved += 1
     messages.success(request, f"Moved {moved} task{'s' if moved != 1 else ''} to {new_owner.display_name}.")
     return redirect("leave_approvals")
+
+
+# ---------------------------------------------------------------- monthly calendar
+
+
+@login_required
+def schedule(request):
+    """Deadlines, office holidays and approved leave on one monthly calendar.
+
+    Admins see everyone, team leads their team and themselves, team members their own work.
+    """
+    user = request.user
+    today = timezone.localdate()
+    month = reports.parse_month(request.GET.get("month"))
+    weeks = calendar.Calendar(firstweekday=0).monthdatescalendar(month.year, month.month)
+    first, last = weeks[0][0], weeks[-1][-1]
+
+    if user.is_admin:
+        tasks = Task.objects.all()
+        people = User.objects.filter(is_active=True)
+    elif user.is_lead:
+        tasks = Task.objects.filter(Q(assignee__manager=user) | Q(assignee=user) | Q(collaborators=user))
+        people = User.objects.filter(is_active=True).filter(Q(manager=user) | Q(pk=user.pk))
+    else:
+        tasks = Task.objects.filter(Q(assignee=user) | Q(collaborators=user) | Q(watchers=user))
+        people = User.objects.filter(pk=user.pk)
+    tasks = Task.objects.filter(pk__in=tasks.values("pk"), due_date__range=(first, last))
+    leaves = Leave.objects.filter(
+        status=Leave.Status.APPROVED, start_date__lte=last, end_date__gte=first, user__in=people,
+    ).select_related("user")
+
+    member_id = request.GET.get("member", "all")
+    if not member_id.isdigit() or not people.filter(pk=member_id).exists():
+        member_id = "all"
+    if member_id != "all":
+        tasks = tasks.filter(Q(assignee_id=member_id) | Q(collaborators=member_id))
+        leaves = leaves.filter(user_id=member_id)
+    client_id = request.GET.get("client", "all")
+    if client_id.isdigit():
+        tasks = tasks.filter(client_id=client_id)
+    else:
+        client_id = "all"
+
+    by_day = {}
+    for task in tasks.select_related("assignee", "client").distinct().order_by("priority", "created_at"):
+        by_day.setdefault(task.due_date, []).append(task)
+    for items in by_day.values():
+        items.sort(key=lambda t: (t.status == S.DONE, Task.PRIORITY_ORDER.get(t.priority, 1)))
+    holidays = {h.date: h.name for h in Holiday.objects.filter(date__range=(first, last))}
+    leaves = list(leaves)
+    off_days = weekly_off_days()
+
+    calendar_weeks = []
+    for week in weeks:
+        days = []
+        for day in week:
+            items = by_day.get(day, [])
+            away = [leave.user for leave in leaves if leave.start_date <= day <= leave.end_date]
+            away_ids = {p.pk for p in away}
+            days.append({
+                "date": day,
+                "in_month": day.month == month.month,
+                "is_today": day == today,
+                "closed": day.weekday() in off_days,
+                "holiday": holidays.get(day),
+                "away": away,
+                "tasks": items[:4],
+                "more_tasks": items[4:],
+                # A deadline for someone who's on leave that day, the kind of clash to catch early.
+                "clashes": sum(1 for t in items if t.assignee_id in away_ids and t.status in Task.NEEDS_WORK),
+                "busy": len(items) > 0 or bool(away) or day in holidays,
+                "can_assign": user.is_lead and day >= today,
+            })
+        calendar_weeks.append(days)
+
+    prev_month = (month - timedelta(days=1)).replace(day=1)
+    next_month = (month + timedelta(days=32)).replace(day=1)
+    extra = "".join(f"&{k}={v}" for k, v in (("member", member_id), ("client", client_id)) if v != "all")
+    return render(request, "tasks/schedule.html", {
+        "month": month,
+        "weeks": calendar_weeks,
+        "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        "prev_url": f"?month={prev_month:%Y-%m}{extra}",
+        "next_url": f"?month={next_month:%Y-%m}{extra}",
+        "today_url": f"?month={today:%Y-%m}{extra}",
+        "people": people,
+        "clients": Client.objects.filter(is_active=True),
+        "member_id": member_id,
+        "client_id": client_id,
+    })
 
 
 # ---------------------------------------------------------------- tasks people add for themselves
