@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+{% if user.is_admin %}
+<div class="panel">
+  <h2>Add a client or project</h2>
+  <form method="post" class="row">
+    {% csrf_token %}
+    {{ form.name }}
+    <button class="primary">Add</button>
+  </form>
+  {% for e in form.name.errors %}<div class="err">{{ e }}</div>{% endfor %}
+</div>
+{% endif %}
+<div class="panel">
+  <h2>Clients and projects <small>{{ month|date:"F Y" }}, counted by due date</small></h2>
+  <div class="scroll">
+    <table class="rep">
+      <thead><tr><th>Client</th><th>Tasks this month</th><th>Done</th><th>On time</th><th>Open (all dates)</th><th>Overdue (all dates)</th><th></th></tr></thead>
+      <tbody>
+      {% for r in rows %}{% with c=r.client s=r.summary %}
+        <tr class="{% if not c.is_active %}muted{% endif %}">
+          <td><a class="link" href="{% url 'report' %}?client={{ c.pk }}"><b>{{ c.name }}</b></a>{% if not c.is_active %} <span class="small">(hidden)</span>{% endif %}</td>
+          <td>{{ s.assigned }}</td>
+          <td>{{ s.done }}</td>
+          <td>{{ s.on_time_pct|default_if_none:"—" }}{% if s.on_time_pct is not None %}%{% endif %}</td>
+          <td>{{ r.open }}</td>
+          <td class="{% if r.overdue %}red{% endif %}">{{ r.overdue }}</td>
+          <td class="nowrap">
+            <a class="btn sm" href="{% url 'report' %}?client={{ c.pk }}">Report</a>
+            {% if user.is_admin %}
+            <details class="inline">
+              <summary class="btn sm">Edit</summary>
+              <form method="post" action="{% url 'client_update' c.pk %}" class="row">{% csrf_token %}
+                <input type="text" name="name" value="{{ c.name }}" maxlength="120" required aria-label="Name">
+                <button class="sm">Rename</button>
+                <button class="sm" name="toggle" value="1" formnovalidate>{% if c.is_active %}Hide from new tasks{% else %}Show again{% endif %}</button>
+              </form>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+      {% endwith %}{% empty %}<tr><td colspan="7" class="muted">No clients yet. Add one, then pick it when you assign a task.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -15,7 +15,7 @@
   <header class="top">
     <div>
       <h1><a href="{% url 'home' %}"><span>Unicolors</span> Daily Tasks</a>
-        {% if user.is_authenticated %}<span class="role-badge">{% if user.is_admin %}Admin{% else %}Team member{% endif %}</span>{% endif %}
+        {% if user.is_authenticated %}<span class="role-badge">{{ user.role_label }}</span>{% endif %}
       </h1>
       <div class="sub">Assign, track and complete the team's daily work</div>
     </div>
@@ -25,6 +25,7 @@
       <span class="avatar sm">{{ user.initials }}</span>
       <span class="who-name">{{ user.display_name }}</span>
       <a href="{% url 'password_change' %}" class="link">Change password</a>
+      <a href="{% url 'security' %}" class="link">Two-step login</a>
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sm">Log out</button></form>
     </div>
     {% endif %}
@@ -38,6 +39,14 @@
       <a class="tab {% if name == 'my_tasks' %}on{% endif %}" href="{% url 'my_tasks' %}">My tasks</a>
       <a class="tab {% if name == 'report' %}on{% endif %}" href="{% url 'report' %}">Monthly reports</a>
       <a class="tab {% if name == 'team' or name == 'user_add' or name == 'user_edit' or name == 'user_password' %}on{% endif %}" href="{% url 'team' %}">Team</a>
+      <a class="tab {% if name == 'clients' %}on{% endif %}" href="{% url 'clients' %}">Clients</a>
+      <a class="tab {% if name == 'calendar' %}on{% endif %}" href="{% url 'calendar' %}">Leave &amp; holidays</a>
+      <a class="tab {% if name == 'archive' %}on{% endif %}" href="{% url 'archive' %}">Archive</a>
+    {% elif user.is_lead %}
+      <a class="tab {% if name == 'dashboard' %}on{% endif %}" href="{% url 'dashboard' %}">Team dashboard</a>
+      <a class="tab {% if name == 'my_tasks' %}on{% endif %}" href="{% url 'my_tasks' %}">My tasks</a>
+      <a class="tab {% if name == 'report' %}on{% endif %}" href="{% url 'report' %}">Team reports</a>
+      <a class="tab {% if name == 'clients' %}on{% endif %}" href="{% url 'clients' %}">Clients</a>
     {% else %}
       <a class="tab {% if name == 'my_tasks' %}on{% endif %}" href="{% url 'my_tasks' %}">My tasks</a>
       <a class="tab {% if name == 'report' %}on{% endif %}" href="{% url 'report' %}">My month</a>

@@ -22,7 +22,11 @@
       <h2>Welcome back</h2>
       <p class="muted">Log in to your workspace.</p>
 
-      {% if form.errors %}
+      {% if locked %}
+        <div class="banner error" role="alert">
+          Too many wrong attempts, so logins for this account are paused. Please try again in {{ lock_minutes }} minutes, or use “Forgot password?”.
+        </div>
+      {% elif form.errors %}
         <div class="banner error" role="alert">
           {% if form.non_field_errors %}
             The username/email or password is incorrect. Please check and try again.

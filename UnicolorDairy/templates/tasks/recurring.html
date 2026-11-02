@@ -18,6 +18,8 @@
     <label class="t">Task{{ form.title }}</label>
     <label>Priority{{ form.priority }}</label>
     <label>Repeats{{ form.frequency }}</label>
+    <label>Client / project{{ form.client }}</label>
+    <label>Estimated hours{{ form.estimated_hours }}</label>
 
     <div class="full fl" data-show-for="weekly">On these days
       <div class="chips">
@@ -26,11 +28,11 @@
     </div>
     <label data-show-for="monthly">Day of the month{{ form.day_of_month }}<span class="muted small">Short months use their last day.</span></label>
 
-    <label>Due{{ form.due_in_days }}<span class="muted small">Days after it's created · 0 = same day</span></label>
+    <label>Due{{ form.due_in_days }}<span class="muted small">Days after it's created · 0 = same day · moves to the next working day if the office is closed</span></label>
     <label>Starts on{{ form.start_date }}</label>
     <label>Ends on (optional){{ form.end_date }}</label>
 
-    <div class="full fl">Assign to <span class="muted small">(each person gets their own task)</span>
+    <div class="full fl">Assign to <span class="muted small">(each person gets their own task, except on days they're on leave)</span>
       <div class="chips">
         {% for cb in form.assignees %}
           <label class="chip">{{ cb.tag }}<span class="avatar xs">{{ cb.choice_label|slice:":1"|upper }}</span>{{ cb.choice_label }}</label>
@@ -60,7 +62,8 @@
         </div>
         <div class="muted small">
           {{ r.schedule_label }} · {{ r.due_label }} ·
-          {% for p in r.assignees.all %}{{ p.display_name }}{% if not forloop.last %}, {% endif %}{% empty %}nobody{% endfor %}
+          {% for p in r.assignees.all %}{{ p.display_name }}{% if not p.is_active %} <span class="red">(left)</span>{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}<span class="red">nobody assigned</span>{% endfor %}
+          {% if r.client %} · {{ r.client.name }}{% endif %}
         </div>
         <div class="muted small">
           {% if row.next_run %}Next: <b>{{ row.next_run|date:"D, j M Y" }}</b>{% elif r.is_active %}No more dates (schedule ended){% else %}Paused — no new tasks will be created{% endif %}

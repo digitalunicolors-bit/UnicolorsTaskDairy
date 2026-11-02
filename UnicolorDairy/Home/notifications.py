@@ -10,12 +10,13 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import EmailMultiAlternatives
+from django.db import connection
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
-from .models import User
+from .models import EmailFailure, User
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +28,13 @@ STYLES = {
     "changes": ("#d6409f", "#fcedf6", "✏️", "Changes requested"),
     "reopened": ("#d6409f", "#fcedf6", "↩️", "Reopened"),
     "welcome": ("#e5484d", "#fdeeee", "👋", "Invitation"),
-    "reminder_week": ("#2f6fde", "#eef3fd", "⏰", "Due in 7 days"),
+    "reminder_week": ("#2f6fde", "#eef3fd", "⏰", "Coming up"),
     "reminder_day": ("#b7791f", "#fdf6e9", "⏰", "Due tomorrow"),
     "reminder_due": ("#d93d42", "#fdeeee", "⏰", "Due today"),
     "overdue": ("#d93d42", "#fdeeee", "⚠️", "Overdue"),
+    "mentioned": ("#2f6fde", "#eef3fd", "💬", "You were tagged"),
+    "extension": ("#b7791f", "#fdf6e9", "📅", "Deadline"),
+    "request": ("#2f6fde", "#eef3fd", "🙋", "Task request"),
 }
 PRIORITY_COLORS = {"high": "#d93d42", "medium": "#b7791f", "low": "#2a9d5c"}
 
@@ -122,20 +126,38 @@ def _send(ctx, recipients, background=None):
     html = render_to_string("tasks/email_task.html", ctx)
 
     def run():
-        try:
-            for to in recipients:  # one email each, so people don't see each other's addresses
+        all_sent = True
+        for to in recipients:  # one email each, so people don't see each other's addresses
+            try:
                 msg = EmailMultiAlternatives(subject, text, None, [to])
                 msg.attach_alternative(html, "text/html")
                 msg.send()
-        except Exception:  # noqa: BLE001 - email problems must never break the app
-            log.exception("Could not send email to %s", recipients)
+            except Exception as err:  # noqa: BLE001 - email problems must never break the app
+                all_sent = False
+                log.exception("Could not send email to %s", to)
+                _record_failure(subject, to, err)
+        return all_sent
+
+    def run_in_thread():
+        try:
+            run()
+        finally:
+            connection.close()
 
     if background is None:
         background = getattr(settings, "EMAIL_SEND_IN_BACKGROUND", True)
     if background:
-        threading.Thread(target=run, daemon=True).start()
-    else:
-        run()
+        threading.Thread(target=run_in_thread, daemon=True).start()
+        return None
+    return run()
+
+
+def _record_failure(subject, recipient, err):
+    """Keep failed emails where admins can see them. Never let this break anything."""
+    try:
+        EmailFailure.objects.create(subject=subject[:255], recipient=recipient[:255], error=str(err)[:2000])
+    except Exception:  # noqa: BLE001
+        log.exception("Could not record the email failure")
 
 
 def _admin_emails(exclude=None):
@@ -143,6 +165,14 @@ def _admin_emails(exclude=None):
     if exclude is not None:
         qs = qs.exclude(pk=exclude.pk)
     return list(qs.values_list("email", flat=True))
+
+
+def _overseer_emails(task, exclude=None):
+    return [p.email for p in task.overseers() if p.email and (exclude is None or p.pk != exclude.pk)]
+
+
+def _worker_emails(task):
+    return [task.assignee.email, *[p.email for p in task.collaborators.all()]]
 
 
 # ---------------------------------------------------------------- emails
@@ -164,7 +194,7 @@ def task_assigned(task, by):
         button={"label": "Open task", "url": _task_link(task, for_admin=False)},
         footer="Start the task when you begin, and mark it complete when it's done.",
     )
-    _send(ctx, [task.assignee.email])
+    _send(ctx, _worker_emails(task))
 
 
 def task_submitted(task, by):
@@ -179,7 +209,7 @@ def task_submitted(task, by):
         button={"label": "Review task", "url": _task_link(task, for_admin=True)},
         footer="Approve it, or request changes with a short note.",
     )
-    _send(ctx, _admin_emails(exclude=by))
+    _send(ctx, _overseer_emails(task, exclude=by))
 
 
 def task_approved(task, by):
@@ -192,7 +222,7 @@ def task_approved(task, by):
         rows=_task_rows(task) + [{"label": "Approved by", "value": by.display_name}],
         button={"label": "View task", "url": _task_link(task, for_admin=False)},
     )
-    _send(ctx, [task.assignee.email])
+    _send(ctx, _worker_emails(task))
 
 
 def task_changes(task, by):
@@ -207,7 +237,69 @@ def task_changes(task, by):
         button={"label": "Update task", "url": _task_link(task, for_admin=False)},
         footer="Make the changes, then mark the task complete again to send it back for approval.",
     )
-    _send(ctx, [task.assignee.email])
+    _send(ctx, _worker_emails(task))
+
+
+def task_mentioned(task, by, people, text):
+    """Email the people tagged on a task."""
+    ctx = _context(
+        "mentioned",
+        subject=f"{by.display_name} tagged you: {task.title}",
+        heading=task.title,
+        greeting_name="there",
+        intro=f"{by.display_name} tagged you on this task.",
+        rows=_task_rows(task),
+        notes=[{"label": "What they wrote", "text": text, "color": "#2f6fde"}],
+        button={"label": "Open task", "url": _task_link(task, for_admin=False)},
+    )
+    _send(ctx, [p.email for p in people])
+
+
+def extension_requested(ext):
+    task = ext.task
+    who = ext.requested_by.display_name if ext.requested_by else "Someone"
+    ctx = _context(
+        "extension",
+        subject=f"More time requested: {task.title}",
+        heading=task.title,
+        greeting_name="team",
+        intro=f"{who} asked to move the deadline from {ext.previous_date:%d %b} to {ext.requested_date:%d %b %Y}.",
+        rows=_task_rows(task),
+        notes=[{"label": "Reason", "text": ext.reason, "color": "#b7791f"}],
+        button={"label": "Review request", "url": _task_link(task, for_admin=True)},
+    )
+    _send(ctx, _overseer_emails(task, exclude=ext.requested_by))
+
+
+def extension_decided(ext):
+    task = ext.task
+    approved = ext.status == ext.Status.APPROVED
+    ctx = _context(
+        "extension",
+        subject=f"More time {'approved' if approved else 'declined'}: {task.title}",
+        heading=task.title,
+        greeting_name=task.assignee.first_name or task.assignee.display_name,
+        intro=(f"The new deadline is {ext.requested_date:%d %b %Y}." if approved
+               else f"The deadline stays {ext.previous_date:%d %b %Y}."),
+        rows=_task_rows(task),
+        notes=[{"label": "Note", "text": ext.decision_note, "color": "#b7791f"}],
+        button={"label": "Open task", "url": _task_link(task, for_admin=False)},
+    )
+    _send(ctx, _worker_emails(task))
+
+
+def task_request_received(req, people):
+    who = req.requested_by.display_name
+    ctx = _context(
+        "request",
+        subject=f"Task request: {req.title}",
+        heading=req.title,
+        greeting_name="team",
+        intro=f"{who} asked for this task to be added.",
+        notes=[{"label": "Details", "text": req.details, "color": "#2f6fde"}],
+        button={"label": "Review request", "url": _url("dashboard")},
+    )
+    _send(ctx, [p.email for p in people])
 
 
 REMINDER_TEXT = {
@@ -217,9 +309,10 @@ REMINDER_TEXT = {
 }
 
 
-def task_reminder(task, kind):
+def task_reminder(task, kind, when=None):
     """Due-date reminder for the person the task is assigned to. Sent right away (not in background)."""
-    when, tip = REMINDER_TEXT[kind]
+    default_when, tip = REMINDER_TEXT[kind]
+    when = when or default_when
     started = task.status != task.Status.TODO
     ctx = _context(
         f"reminder_{kind}",
@@ -239,7 +332,18 @@ def task_reminder(task, kind):
 
 
 def overdue_digest(tasks, today):
-    """One summary email to each admin listing tasks that just became overdue."""
+    """A summary email listing tasks that just became overdue: all of them for admins, their own team for team leads."""
+    _overdue_email(tasks, today, _admin_emails())
+    by_lead = {}
+    for t in tasks:
+        lead = t.assignee.manager
+        if lead and lead.is_active and lead.email and not lead.is_admin:
+            by_lead.setdefault(lead.email, []).append(t)
+    for email, theirs in by_lead.items():
+        _overdue_email(theirs, today, [email])
+
+
+def _overdue_email(tasks, today, recipients):
     n = len(tasks)
     items = []
     for t in tasks:
@@ -262,10 +366,11 @@ def overdue_digest(tasks, today):
         button={"label": "Open dashboard", "url": _url("dashboard")},
         footer="Each overdue task is reported once. Click a task to open it, or reach out to the person directly.",
     )
-    _send(ctx, _admin_emails(), background=False)
+    _send(ctx, recipients, background=False)
 
 
-def welcome(user, by):
+def welcome(user, by, background=False):
+    """Send the invitation. Returns True if it went out, so the screen can tell the truth."""
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
     invite_url = _site() + reverse("accept_invite", kwargs={"uidb64": uid, "token": token})
@@ -291,4 +396,4 @@ def welcome(user, by):
         button={"label": "Join workspace", "url": invite_url},
         footer=f"This invitation link expires in {hours} hours. If it expires, ask your admin to resend it.",
     )
-    _send(ctx, [user.email])
+    return _send(ctx, [user.email], background=background)

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load notiftags %}
 {% block content %}
 
 {# ---------- greeting + search ---------- #}
@@ -19,8 +20,57 @@
   <a class="focus-card red {% if show == 'overdue' %}on{% endif %} {% if not focus.overdue %}zero{% endif %}" href="?show=overdue"><b>{{ focus.overdue }}</b><span>Overdue</span></a>
   <a class="focus-card amber {% if show == 'today' and mode == 'single' and day == today %}on{% endif %} {% if not focus.today %}zero{% endif %}" href="?show=today"><b>{{ focus.today }}</b><span>Due today</span></a>
   <a class="focus-card pink {% if show == 'changes' %}on{% endif %} {% if not focus.changes %}zero{% endif %}" href="?show=changes"><b>{{ focus.changes }}</b><span>Changes requested</span></a>
+  <a class="focus-card grey {% if show == 'hold' %}on{% endif %} {% if not focus.hold %}zero{% endif %}" href="?show=hold"><b>{{ focus.hold }}</b><span>On hold</span></a>
   <a class="focus-card blue {% if show == 'open' %}on{% endif %} {% if not focus.open %}zero{% endif %}" href="?show=open"><b>{{ focus.open }}</b><span>All open tasks</span></a>
 </div>
+
+{# ---------- work with nobody looking after it ---------- #}
+{% for o in orphaned %}
+  <div class="banner warning row-between">
+    <span><b>{{ o.user.display_name }}</b> has been deactivated but still has {{ o.open }} open task{{ o.open|pluralize }}.</span>
+    <a class="btn sm" href="{% url 'handover' o.user.pk %}">Hand over</a>
+  </div>
+{% endfor %}
+
+{# ---------- requests for more time ---------- #}
+{% if pending_extensions %}
+<div class="panel queue">
+  <h2>Asking for more time</h2>
+  {% for e in pending_extensions %}
+    <div class="q-row" data-open-task="{{ e.task.pk }}" tabindex="0" role="button" aria-label="Open {{ e.task.title }}">
+      <span class="avatar sm">{{ e.task.assignee.initials }}</span>
+      <div class="q-main">
+        <b>{{ e.task.title }}</b>
+        <div class="muted small">{{ e.requested_by.display_name|default:"Someone" }} · {{ e.previous_date|date:"j M" }} → {{ e.requested_date|date:"j M" }}<br><span class="q-note">“{{ e.reason|truncatechars:90 }}”</span></div>
+      </div>
+      <div class="q-actions"><button type="button" class="sm" onclick="openTaskModal({{ e.task.pk }})">Review</button></div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ---------- requests from the team ---------- #}
+{% if task_requests %}
+<div class="panel queue">
+  <h2>Task requests from the team</h2>
+  {% for r in task_requests %}
+    <div class="req-row">
+      <div class="q-main">
+        <b>{{ r.title }}</b>
+        <div class="muted small">{{ r.requested_by.display_name }}{% if r.client %} · {{ r.client.name }}{% endif %}{% if r.wanted_by %} · wanted by {{ r.wanted_by|date:"j M" }}{% endif %}{% if r.details %}<br><span class="q-note">“{{ r.details|truncatechars:140 }}”</span>{% endif %}</div>
+      </div>
+      <form method="post" class="req-form" action="{% url 'request_decide' r.pk 'accept' %}">{% csrf_token %}
+        <select name="assignee" aria-label="Who will do it">
+          {% for m in members %}<option value="{{ m.id }}" {% if m.id == r.requested_by_id %}selected{% endif %}>{{ m.display_name }}</option>{% endfor %}
+        </select>
+        <input type="date" name="due_date" value="{{ r.wanted_by|date:'Y-m-d' }}" aria-label="Due date">
+        <button class="sm ok">Create task</button>
+        <button class="sm" formaction="{% url 'request_decide' r.pk 'decline' %}" formnovalidate>Decline</button>
+      </form>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 {# ---------- approval queue ---------- #}
 {% if queue %}
@@ -40,10 +90,12 @@
         </div>
       </div>
       <div class="q-actions">
+        {% if t|can_approve:user %}
         <form method="post" action="{% url 'task_action' t.pk 'approve' %}">{% csrf_token %}
           <input type="hidden" name="next" value="{{ request.get_full_path }}">
           <button class="sm ok">✓ Approve</button>
         </form>
+        {% else %}<span class="muted small">Your own work</span>{% endif %}
         <button type="button" class="sm" onclick="openTaskModal({{ t.pk }})">Review</button>
       </div>
     </div>
@@ -57,10 +109,13 @@
   <span class="muted small wl-label">Team workload</span>
   {% for w in workload %}
     <a class="wl-chip {% if member_id == w.user.id|stringformat:'s' %}on{% endif %}" href="?show=open&member={{ w.user.id }}"
-       title="{{ w.user.display_name }}: {{ w.open }} open{% if w.overdue %}, {{ w.overdue }} overdue{% endif %}">
+       title="{{ w.user.display_name }}: {{ w.open }} open{% if w.hours %}, about {{ w.hours|floatformat:'-1' }} hours{% endif %}{% if w.overdue %}, {{ w.overdue }} overdue{% endif %}{% if w.away %}, on leave today{% endif %}{% if w.gone %}, deactivated{% endif %}">
       <span class="avatar xs {% if w.user.is_admin %}is-admin{% endif %}">{{ w.user.initials }}</span>
       {{ w.user.first_name|default:w.user.display_name }} <b>{{ w.open }}</b>
+      {% if w.hours %}<span class="muted small">{{ w.hours|floatformat:"-1" }}h</span>{% endif %}
       {% if w.overdue %}<i>{{ w.overdue }} late</i>{% endif %}
+      {% if w.away %}<span class="wl-tag">On leave</span>{% endif %}
+      {% if w.gone %}<span class="wl-tag">Left</span>{% endif %}
     </a>
   {% endfor %}
 </div>
@@ -71,7 +126,7 @@
   <summary class="assign-summary">
     <h2>➕ Assign a task</h2>
     <span class="row">
-      <a class="btn sm" href="{% url 'recurring' %}">↻ Recurring tasks</a>
+      {% if user.is_admin %}<a class="btn sm" href="{% url 'recurring' %}">↻ Recurring tasks</a>{% endif %}
       <span class="assign-chevron" aria-hidden="true">▾</span>
     </span>
   </summary>
@@ -80,6 +135,8 @@
     <label class="t">Task{{ form.title }}</label>
     <label>Priority{{ form.priority }}</label>
     <label>Due date{{ form.due_date }}</label>
+    <label>Client / project{{ form.client }}</label>
+    <label>Estimated hours (optional){{ form.estimated_hours }}</label>
 
     <div class="full fl">Assign to (type a name)
       <div class="picker" id="assignPicker">
@@ -97,6 +154,11 @@
         </div>
       </div>
       {% if not form.assignees %}<span class="muted">No people yet — add them in the Team tab.</span>{% endif %}
+      <div class="assign-options">
+        <label class="check">{{ form.shared }} One shared task for everyone picked (otherwise each person gets their own copy)</label>
+        {{ form.lead }}
+        <label class="check">{{ form.is_confidential }} 🔒 Confidential</label>
+      </div>
     </div>
 
     <label class="full">Details (optional · type @ to tag someone){{ form.details }}</label>
@@ -130,6 +192,7 @@
         <option value="review" {% if show == 'review' %}selected{% endif %}>Waiting for approval</option>
         <option value="overdue" {% if show == 'overdue' %}selected{% endif %}>Overdue</option>
         <option value="changes" {% if show == 'changes' %}selected{% endif %}>Changes requested</option>
+        <option value="hold" {% if show == 'hold' %}selected{% endif %}>On hold</option>
       </optgroup>
     </select>
   </label>
@@ -144,6 +207,12 @@
     <select name="member" onchange="this.form.submit()">
       <option value="all">Everyone</option>
       {% for m in members %}<option value="{{ m.id }}" {% if member_id == m.id|stringformat:'s' %}selected{% endif %}>{{ m.display_name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="inline">Client
+    <select name="client" onchange="this.form.submit()">
+      <option value="all">All clients</option>
+      {% for c in clients %}<option value="{{ c.id }}" {% if client_id == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
     </select>
   </label>
   <a class="btn clear-btn {% if show == 'today' and member_id == 'all' %}is-default{% endif %}" href="{% url 'dashboard' %}" title="Back to today, everyone">✕ Clear filters</a>
@@ -169,7 +238,10 @@
   try { if (localStorage.getItem("assignPanelOpen") === "0") p.open = false; } catch (e) {}
   p.addEventListener("toggle", () => { try { localStorage.setItem("assignPanelOpen", p.open ? "1" : "0"); } catch (e) {} });
   // Clicking the Recurring link inside the header shouldn't fold the panel.
-  p.querySelector("summary a").addEventListener("click", e => e.stopPropagation());
+  p.querySelector("summary a")?.addEventListener("click", e => e.stopPropagation());
+  // The Lead choice only matters for a shared task.
+  const shared = document.getElementById("id_shared"), lead = document.getElementById("id_lead");
+  if (shared && lead) { const sync = () => { lead.hidden = !shared.checked; }; shared.addEventListener("change", sync); sync(); }
 })();
 </script>
 <script>

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="narrow">
+  <a class="muted small back-link" href="{% url 'team' %}">← Back to team</a>
+  <div class="panel">
+    <h2>Hand over {{ person.display_name }}'s work</h2>
+    {% if needs_it %}
+      <p class="muted">Pick one person to take over everything below. They'll be notified, and each task's history shows the handover.</p>
+      <ul>
+        <li><b>{{ open_tasks|length }}</b> open task{{ open_tasks|length|pluralize }}</li>
+        <li><b>{{ rules|length }}</b> recurring schedule{{ rules|length|pluralize }}</li>
+        {% if reports_to_them %}<li><b>{{ reports_to_them|length }}</b> {{ reports_to_them|length|pluralize:"person,people" }} reporting to them</li>{% endif %}
+      </ul>
+      {% for t in open_tasks|slice:":10" %}<div class="muted small">· {{ t.title }} (due {{ t.due_date|date:"j M" }}){% if t.client %} · {{ t.client.name }}{% endif %}</div>{% endfor %}
+      <form method="post" class="stack handover-form">{% csrf_token %}
+        <label>Hand over to
+          <select name="to" required>
+            <option value="">Choose a person…</option>
+            {% for c in candidates %}<option value="{{ c.pk }}">{{ c.display_name }}</option>{% endfor %}
+          </select>
+        </label>
+        <div class="row">
+          <button class="primary">Hand over</button>
+          <a class="btn" href="{% url 'team' %}">Do this later</a>
+        </div>
+      </form>
+    {% else %}
+      <p class="muted">Nothing to hand over.</p>
+      <a class="btn" href="{% url 'team' %}">Back to team</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

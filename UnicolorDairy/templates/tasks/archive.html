@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+  <h2>Archive <small>tasks removed from the board, with all their history. Restore one any time.</small></h2>
+  {% for t in tasks %}
+    <div class="rec-row">
+      <div class="grow">
+        <div class="rec-title"><b>{{ t.title }}</b> <span class="st s-{{ t.status }}">{{ t.get_status_display }}</span>{% if t.client %} <span class="pill client">{{ t.client.name }}</span>{% endif %}</div>
+        <div class="muted small">{{ t.assignee.display_name }} · due {{ t.due_date|date:"j M Y" }} · archived by {{ t.archived_by.display_name|default:"someone" }} on {{ t.archived_at|date:"j M Y, g:i A" }}</div>
+      </div>
+      <form method="post" action="{% url 'archive_restore' t.pk %}">{% csrf_token %}<button class="sm">↩ Restore</button></form>
+    </div>
+  {% empty %}
+    <div class="empty">Nothing has been archived.</div>
+  {% endfor %}
+</div>
+{% endblock %}

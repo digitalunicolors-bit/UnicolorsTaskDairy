@@ -1,7 +1,7 @@
 {# Expects: t (task), admin_view (bool), show_member (bool) #}
 {% load notiftags %}
-<div class="card" id="task-{{ t.pk }}" data-id="{{ t.pk }}" data-status="{{ t.status }}" data-owner="{% if t.assignee_id == user.id %}1{% endif %}">
-  <h3>{{ t.title }}</h3>
+<div class="card" id="task-{{ t.pk }}" data-id="{{ t.pk }}" data-status="{{ t.status }}" data-owner="{% if t|can_work:user %}1{% endif %}">
+  <h3>{% if t.is_confidential %}<span title="Confidential">🔒 </span>{% endif %}{{ t.title }}</h3>
   {% if t.details %}<p>{{ t.details|mentionize }}</p>{% endif %}
   {% with atts=t.attachments.all %}{% if atts %}
   <div class="atts">
@@ -9,17 +9,21 @@
       {% if a.kind == "voice" %}
         <div class="att voice"><span class="small">🎙 Voice note</span><audio controls preload="none" src="{% url 'attachment' a.pk %}"></audio></div>
       {% else %}
-        <a class="att" href="{% url 'attachment' a.pk %}" target="_blank" rel="noopener">📎 {{ a.original_name|truncatechars:34 }} <span class="muted">{{ a.size_label }}</span></a>
+        <a class="att {% if a.kind == 'work' %}att-work{% endif %}" href="{% url 'attachment' a.pk %}" target="_blank" rel="noopener">📎 {{ a.original_name|truncatechars:34 }} <span class="muted">{{ a.size_label }}</span></a>
       {% endif %}
     {% endfor %}
   </div>
   {% endif %}{% endwith %}
+  {% if t.status == "hold" %}<div class="note hold"><b>{{ t.get_hold_kind_display }}{% if t.hold_since %} since {{ t.hold_since|date:"j M" }}{% endif %}:</b> {{ t.hold_note|urlize }}</div>{% endif %}
   {% if t.status == "change" and t.admin_note %}<div class="note change"><b>Changes requested:</b> {{ t.admin_note|urlize }}</div>{% endif %}
   {% if t.member_note and t.status == "review" or t.member_note and t.status == "done" %}<div class="note upd"><b>{% if admin_view %}{{ t.assignee.display_name }}'s note{% else %}Your note{% endif %}:</b> {{ t.member_note|urlize }}</div>{% endif %}
   <div class="meta">
+    {% if t.client %}<span class="pill client">{{ t.client.name }}</span>{% endif %}
     <span class="pill p-{{ t.priority }}">{{ t.get_priority_display }}</span>
     <span class="pill {% if t.is_late %}late{% endif %}">{% if t.is_late %}Overdue · {% else %}Due {% endif %}{{ t.due_date|date:"j M" }}</span>
-    {% if show_member %}<span class="pill who">{{ t.assignee.display_name }}</span>{% endif %}
+    {% if show_member %}<span class="pill who">{{ t.assignee.display_name }}{% with n=t.collaborators.all|length %}{% if n %} +{{ n }}{% endif %}{% endwith %}</span>{% endif %}
+    {% if t.estimated_hours %}<span class="pill" title="Estimated time">⏱ {{ t.estimated_hours|floatformat:"-1" }}h</span>{% endif %}
+    {% with p=t.subtask_progress %}{% if p %}<span class="pill" title="Checklist">☑ {{ p.done }}/{{ p.total }}</span>{% endif %}{% endwith %}
     {% if t.comment_count %}<span class="pill" title="Comments">💬 {{ t.comment_count }}</span>{% endif %}
     {% if t.recurring_id %}<span class="pill" title="Created by a recurring schedule">↻ Repeats</span>{% endif %}
   </div>
@@ -30,7 +34,7 @@
   </div>
 
   <div class="actions">
-    {% if t.assignee_id == user.id %}
+    {% if t|is_worker:user %}
       {% if t.status == "todo" %}
         <form method="post" action="{% url 'task_action' t.pk 'start' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="sm">Start</button></form>
       {% endif %}
@@ -46,8 +50,8 @@
       {% endif %}
     {% endif %}
 
-    {% if admin_view %}
-      {% if t.status == "review" %}
+    {% if admin_view and t|can_manage:user %}
+      {% if t.status == "review" and t|can_approve:user %}
         <form method="post" action="{% url 'task_action' t.pk 'approve' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="sm ok">Approve</button></form>
       {% endif %}
       {% if t.status == "review" or t.status == "done" %}
@@ -61,11 +65,12 @@
         </details>
       {% endif %}
       <details class="inline">
-        <summary class="btn sm danger">Delete</summary>
+        <summary class="btn sm danger">Archive</summary>
         <form method="post" action="{% url 'task_action' t.pk 'delete' %}">{% csrf_token %}
           <input type="hidden" name="next" value="{{ request.get_full_path }}">
-          <span class="small">Delete this task permanently?</span>
-          <button class="sm danger">Yes, delete</button>
+          <span class="small">Remove from the board? Everything is kept and it can be restored.</span>
+          <input type="text" name="note" maxlength="500" placeholder="Reason (optional)">
+          <button class="sm danger">Archive task</button>
         </form>
       </details>
     {% endif %}

@@ -1,16 +1,22 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
+from django.views.generic import RedirectView
+
+from Home import security
 
 urlpatterns = [
-    path("login/", auth_views.LoginView.as_view(), name="login"),
+    path("login/", security.ProtectedLoginView.as_view(), name="login"),
+    path("login/verify/", security.login_verify, name="login_verify"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path(
         "password/",
-        auth_views.PasswordChangeView.as_view(success_url="/password/done/"),
+        security.PasswordChangeView.as_view(success_url="/password/done/"),
         name="password_change",
     ),
     path("password/done/", auth_views.PasswordChangeDoneView.as_view(), name="password_change_done"),
+    # Everyone logs in through the protected page, including for the Django admin.
+    path("django-admin/login/", RedirectView.as_view(pattern_name="login", query_string=True)),
     path("django-admin/", admin.site.urls),
     path("", include("Home.urls")),
     path(
@@ -34,7 +40,7 @@ urlpatterns = [
 
     path(
         "reset-password/<uidb64>/<token>/",
-        auth_views.PasswordResetConfirmView.as_view(
+        security.PasswordResetConfirmView.as_view(
             template_name="registration/password_reset_confirm.html"
         ),
         name="password_reset_confirm",

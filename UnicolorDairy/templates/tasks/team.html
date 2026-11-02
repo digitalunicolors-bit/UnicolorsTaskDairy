@@ -17,6 +17,17 @@
   </div>
 </div>
 
+{% if email_failures %}
+<div class="banner warning">
+  <div class="row-between">
+    <b>{{ email_failure_count }} email{{ email_failure_count|pluralize }} couldn't be sent</b>
+    <form method="post" action="{% url 'email_failures_clear' %}">{% csrf_token %}<button class="sm">Clear list</button></form>
+  </div>
+  {% for f in email_failures %}<div class="small">{{ f.created_at|date:"j M, g:i A" }} · {{ f.recipient }} · {{ f.subject }}</div>{% endfor %}
+  <div class="small muted">Check the Brevo account and the address. The most recent 5 are shown.</div>
+</div>
+{% endif %}
+
 {# ---------- summary numbers ---------- #}
 <div class="stats">
   <div class="stat"><small>People</small><b>{{ counts.all }}</b></div>
@@ -69,13 +80,15 @@
         <div class="person-head">
           <b>{{ u.display_name }}</b>
           {% if u == user %}<span class="you">You</span>{% endif %}
-          <span class="role {% if u.is_admin %}admin{% endif %}">{% if u.is_admin %}Admin{% else %}Member{% endif %}</span>
+          <span class="role {% if u.is_admin %}admin{% endif %}">{{ u.role_label }}</span>
+          {% if r.away %}<span class="invite-status pending">On leave today</span>{% endif %}
+          {% if u.totp_enabled %}<span class="invite-status" title="Two-step login is on">🔐</span>{% endif %}
           {% if r.state == "pending" %}<span class="invite-status pending">● Invite pending</span>
           {% elif r.state == "expired" %}<span class="invite-status expired">⚠ Invite expired</span>
           {% elif r.state == "inactive" %}<span class="invite-status expired">Deactivated</span>{% endif %}
         </div>
         <div class="muted small person-sub">
-          @{{ u.username }}{% if u.designation %} · {{ u.designation }}{% endif %}{% if u.email %} · <a class="link" href="mailto:{{ u.email }}">{{ u.email }}</a>{% endif %}
+          @{{ u.username }}{% if u.designation %} · {{ u.designation }}{% endif %}{% if u.manager %} · reports to {{ u.manager.display_name }}{% endif %}{% if u.email %} · <a class="link" href="mailto:{{ u.email }}">{{ u.email }}</a>{% endif %}
         </div>
         <div class="muted small">
           {% if r.state == "pending" or r.state == "expired" %}
@@ -105,6 +118,7 @@
           <a class="btn sm" href="{% url 'dashboard' %}?show=month&member={{ u.pk }}" title="Board filtered to this person, this month">Tasks</a>
           <a class="btn sm" href="{% url 'report' %}?member={{ u.pk }}">Report</a>
         {% endif %}
+        {% if r.can_manage %}
         <a class="btn sm" href="{% url 'user_edit' u.pk %}">Edit</a>
 
         <details class="menu">
@@ -121,6 +135,10 @@
               {% endif %}
             {% else %}
               <a class="menu-item" href="{% url 'user_password' u.pk %}">🔑 Reset password</a>
+              {% if u.totp_enabled and u != user %}
+                <form method="post" action="{% url 'reset_two_step' u.pk %}">{% csrf_token %}<button class="menu-item">📵 Turn off two-step login</button></form>
+              {% endif %}
+              {% if not u.is_active %}<a class="menu-item" href="{% url 'handover' u.pk %}">🤝 Hand over work</a>{% endif %}
               {% if u != user %}
                 <form method="post" action="{% url 'user_toggle_active' u.pk %}"
                       {% if u.is_active %}onsubmit="return confirm('Deactivate {{ u.display_name|escapejs }}? They won\'t be able to log in. Their tasks and history are kept.')"{% endif %}>{% csrf_token %}
@@ -135,6 +153,7 @@
             {% if u.email %}<a class="menu-item" href="mailto:{{ u.email }}">✉ Send email</a>{% endif %}
           </div>
         </details>
+        {% endif %}
       </div>
     </div>
   {% endwith %}{% endfor %}
@@ -144,7 +163,8 @@
 </div>
 
 <p class="muted small team-foot">
-  Admins can assign, approve and see everyone's reports. Members see only their own tasks.
+  The owner manages admins. Admins assign, approve and see everyone's reports, and manage team leads and members.
+  Team leads do the same for the people who report to them. Members see only their own tasks.
   Deactivated people can't log in, but their tasks and history stay.
 </p>
 {% endblock %}

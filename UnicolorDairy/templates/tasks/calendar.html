@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="rep-charts">
+  <div class="panel">
+    <h2>Office holidays</h2>
+    <form method="post" class="form-grid two-col">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="holiday">
+      <label>Date{{ holiday_form.date }}</label>
+      <label>Name{{ holiday_form.name }}</label>
+      {% for f in holiday_form %}{% for e in f.errors %}<div class="err full">{{ e }}</div>{% endfor %}{% endfor %}
+      <div class="full"><button class="primary">Add holiday</button></div>
+    </form>
+    {% for h in holidays %}
+      <div class="rec-row">
+        <div class="grow"><b>{{ h.name }}</b> <span class="muted small">{{ h.date|date:"D, j M Y" }}</span></div>
+        <form method="post" action="{% url 'holiday_delete' h.pk %}">{% csrf_token %}<button class="sm">Remove</button></form>
+      </div>
+    {% empty %}<p class="muted small">No holidays added.</p>{% endfor %}
+    <p class="muted small">On these days, and on Sundays, “every working day” tasks aren't created, and due dates from schedules move to the next working day.</p>
+  </div>
+  <div class="panel">
+    <h2>Leave</h2>
+    <form method="post" class="form-grid two-col">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="leave">
+      <label class="full">Person{{ leave_form.user }}</label>
+      <label>From{{ leave_form.start_date }}</label>
+      <label>To{{ leave_form.end_date }}</label>
+      <label class="full">Note{{ leave_form.note }}</label>
+      {% for f in leave_form %}{% for e in f.errors %}<div class="err full">{{ e }}</div>{% endfor %}{% endfor %}
+      {% for e in leave_form.non_field_errors %}<div class="err full">{{ e }}</div>{% endfor %}
+      <div class="full"><button class="primary">Add leave</button></div>
+    </form>
+    {% for l in leaves %}
+      <div class="rec-row">
+        <div class="grow"><b>{{ l.user.display_name }}</b> <span class="muted small">{{ l.start_date|date:"j M" }} – {{ l.end_date|date:"j M Y" }}{% if l.note %} · {{ l.note }}{% endif %}</span></div>
+        <form method="post" action="{% url 'leave_delete' l.pk %}">{% csrf_token %}<button class="sm">Remove</button></form>
+      </div>
+    {% empty %}<p class="muted small">No leave added.</p>{% endfor %}
+    <p class="muted small">While someone is on leave, they get no reminders, recurring tasks skip them and admins are told, and they're marked on the dashboard.</p>
+  </div>
+</div>
+{% endblock %}

@@ -5,7 +5,7 @@
 <div class="row-between rep-top">
   <div>
     <h2 class="rep-h">{% if single %}{{ selected_user.display_name }}'s report{% else %}Team report{% endif %}</h2>
-    <p class="muted small">{{ period.label }} · tasks counted by due date · compared with {{ period.prev_start|date:"j M" }} – {{ period.prev_end|date:"j M" }}</p>
+    <p class="muted small">{{ period.label }} · tasks counted by due date · on time is judged by when the person submitted, not when it was approved · compared with {{ period.prev_start|date:"j M" }} – {{ period.prev_end|date:"j M" }}</p>
   </div>
   <div class="row no-print">
     <a class="btn" href="{% url 'report_csv' %}?{{ query }}">⬇ Download CSV (Excel)</a>
@@ -28,7 +28,13 @@
   <label class="inline" data-show-period="custom">From<input type="date" name="start" value="{{ period.start|date:'Y-m-d' }}"></label>
   <label class="inline" data-show-period="custom">To<input type="date" name="end" value="{{ period.end|date:'Y-m-d' }}"></label>
   <button class="sm" type="submit" data-show-period="custom">Apply</button>
-  {% if user.is_admin %}
+  <label class="inline">Client
+    <select name="client" onchange="this.form.submit()">
+      <option value="all">All clients</option>
+      {% for c in clients %}<option value="{{ c.id }}" {% if client_id == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% if user.is_lead %}
   <label class="inline">Member
     <select name="member" onchange="this.form.submit()">
       <option value="all">All members</option>
@@ -171,7 +177,7 @@
              data-late="{% if t.is_late or t.finished_late %}1{% endif %}"
              data-changes="{% if t.change_count %}1{% endif %}">
           <span class="st s-{{ t.status }}">{{ t.get_status_display }}</span>
-          <span class="t"><span class="pill p-{{ t.priority }}">{{ t.get_priority_display }}</span> {{ t.title }}{% if not single %} <span class="muted">· {{ t.assignee.display_name }}</span>{% endif %}</span>
+          <span class="t"><span class="pill p-{{ t.priority }}">{{ t.get_priority_display }}</span> {{ t.title }}{% if t.client %} <span class="pill client">{{ t.client.name }}</span>{% endif %}{% if not single %} <span class="muted">· {{ t.assignee.display_name }}</span>{% endif %}</span>
           <span class="muted small">
             {% if t.status == "done" %}Approved {{ t.done_at|date:"j M, g:i A" }}{% if t.approved_by %} by {{ t.approved_by.display_name }}{% endif %}{% elif t.submitted_at %}Submitted {{ t.submitted_at|date:"j M, g:i A" }}{% endif %}
             {% if t.is_late or t.finished_late %} · <b class="red">Late</b>{% endif %}

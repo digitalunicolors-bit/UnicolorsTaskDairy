@@ -3,7 +3,7 @@ from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
-from .models import RecurringTask, Task, User
+from .models import Client, Holiday, Leave, RecurringTask, Task, User, people_managed_by
 
 
 class AssigneeChoiceField(forms.ModelMultipleChoiceField):
@@ -34,6 +34,20 @@ def _check_size(f):
     return f
 
 
+def _hours_field():
+    return forms.DecimalField(
+        required=False, min_value=0, max_value=999, max_digits=5, decimal_places=1, label="Estimated hours",
+        widget=forms.NumberInput(attrs={"step": "0.5", "min": "0", "placeholder": "e.g. 4"}),
+    )
+
+
+def _client_field():
+    return forms.ModelChoiceField(
+        queryset=Client.objects.filter(is_active=True), required=False, empty_label="No client / internal",
+        label="Client / project",
+    )
+
+
 class AssignTaskForm(forms.Form):
     title = forms.CharField(max_length=200, widget=forms.TextInput(attrs={"placeholder": "e.g. Peanutji Diwali post – 3 options"}))
     priority = forms.ChoiceField(choices=Task.Priority.choices, initial=Task.Priority.MEDIUM)
@@ -49,10 +63,18 @@ class AssignTaskForm(forms.Form):
     )
     attachments = MultipleFileField(required=False)
     voice_note = forms.FileField(required=False, widget=forms.FileInput(attrs={"accept": "audio/*", "hidden": True}))
+    client = _client_field()
+    estimated_hours = _hours_field()
+    is_confidential = forms.BooleanField(required=False, label="Confidential")
+    shared = forms.BooleanField(required=False, label="One shared task for everyone picked")
+    lead = forms.ModelChoiceField(queryset=User.objects.none(), required=False, empty_label="Lead: first person picked")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["assignees"].queryset = User.objects.filter(is_active=True)
+        people = people_managed_by(user) if user else User.objects.filter(is_active=True)
+        self.fields["assignees"].queryset = people
+        self.fields["lead"].queryset = people
+        self.fields["lead"].label_from_instance = lambda u: f"Lead: {u.display_name}"
         if not self.is_bound:
             self.initial.setdefault("due_date", timezone.localdate())
 
@@ -71,6 +93,19 @@ class NoteForm(forms.Form):
     note = forms.CharField(required=False, max_length=1000, widget=forms.Textarea(attrs={"rows": 2}))
 
 
+def _limit_role_and_lead(form, actor, keep_admin=False):
+    """Only the owner can make someone an admin."""
+    if "role" in form.fields and actor is not None and not actor.is_superuser and not keep_admin:
+        form.fields["role"].choices = [c for c in form.fields["role"].choices if c[0] != User.Role.ADMIN]
+    leads = User.objects.filter(is_active=True, role__in=[User.Role.MANAGER, User.Role.ADMIN])
+    if form.instance.pk:
+        leads = leads.exclude(pk=form.instance.pk)
+    form.fields["manager"].queryset = leads
+    form.fields["manager"].required = False
+    form.fields["manager"].empty_label = "Nobody (admins approve)"
+    form.fields["manager"].label_from_instance = lambda u: u.display_name
+
+
 class UserCreateForm(forms.ModelForm):
     class Meta:
         model = User
@@ -81,7 +116,12 @@ class UserCreateForm(forms.ModelForm):
             "email",
             "designation",
             "role",
+            "manager",
         ]
+
+    def __init__(self, *args, actor=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        _limit_role_and_lead(self, actor)
 
     def clean_email(self):
         email = self.cleaned_data["email"].strip().lower()
@@ -110,8 +150,13 @@ class UserCreateForm(forms.ModelForm):
 class UserEditForm(forms.ModelForm):
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "email", "designation", "role", "is_active"]
+        fields = ["first_name", "last_name", "email", "designation", "role", "manager", "is_active"]
         labels = {"is_active": "Can log in (active)"}
+
+    def __init__(self, *args, actor=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        keep_admin = self.instance.pk and actor and self.instance.pk == actor.pk
+        _limit_role_and_lead(self, actor, keep_admin=keep_admin)
 
 
 class SetPasswordForm(forms.Form):
@@ -168,7 +213,7 @@ class RecurringTaskForm(forms.ModelForm):
 
     class Meta:
         model = RecurringTask
-        fields = ["title", "priority", "frequency", "day_of_month", "due_in_days", "start_date", "end_date", "assignees", "details"]
+        fields = ["title", "client", "estimated_hours", "priority", "frequency", "day_of_month", "due_in_days", "start_date", "end_date", "assignees", "details"]
         widgets = {
             "title": forms.TextInput(attrs={"placeholder": "e.g. Peanutji Instagram post"}),
             "details": forms.Textarea(attrs={"rows": 3, "placeholder": "Brief, references, file links…"}),
@@ -182,6 +227,9 @@ class RecurringTaskForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["assignees"].queryset = User.objects.filter(is_active=True)
         self.fields["end_date"].required = False
+        self.fields["client"].queryset = Client.objects.filter(is_active=True)
+        self.fields["client"].empty_label = "No client / internal"
+        self.fields["estimated_hours"].widget.attrs.update({"step": "0.5", "min": "0"})
         if self.instance.pk:
             self.initial["weekday_choices"] = [str(d) for d in self.instance.weekday_list]
         elif not self.is_bound:
@@ -222,18 +270,92 @@ class TaskEditForm(forms.ModelForm):
 
     class Meta:
         model = Task
-        fields = ["title", "priority", "due_date", "assignee", "details"]
-        labels = {"assignee": "Assigned to", "title": "Task"}
+        fields = ["title", "client", "estimated_hours", "priority", "due_date", "assignee", "collaborators", "is_confidential", "details"]
+        labels = {"assignee": "Assigned to", "title": "Task", "client": "Client / project",
+                  "collaborators": "Working with", "is_confidential": "Confidential"}
         widgets = {
             "due_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "details": forms.Textarea(attrs={"rows": 4, "placeholder": "Brief, references, file links…"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        people = User.objects.filter(is_active=True)
+        people = people_managed_by(user) if user else User.objects.filter(is_active=True)
         if self.instance.pk:
             people = people | User.objects.filter(pk=self.instance.assignee_id)
         self.fields["assignee"].queryset = people.distinct()
+        self.fields["client"].queryset = Client.objects.filter(is_active=True) | Client.objects.filter(pk=self.instance.client_id)
+        self.fields["client"].empty_label = "No client / internal"
+        self.fields["collaborators"].required = False
+        self.fields["collaborators"].queryset = User.objects.filter(is_active=True)
+        self.fields["collaborators"].label_from_instance = lambda u: u.display_name
+        self.fields["collaborators"].widget.attrs["size"] = 4
         self.fields["assignee"].label_from_instance = lambda u: u.display_name
         self.fields["assignee"].empty_label = None
+
+
+class MemberTaskForm(forms.Form):
+    """A team member adding their own task, or asking for one."""
+
+    KIND_CHOICES = [("self", "I'll do this myself"), ("request", "Ask for this to be assigned")]
+
+    kind = forms.ChoiceField(choices=KIND_CHOICES, initial="self", widget=forms.RadioSelect)
+    title = forms.CharField(max_length=200, widget=forms.TextInput(attrs={"placeholder": "What needs doing?"}))
+    client = _client_field()
+    priority = forms.ChoiceField(choices=Task.Priority.choices, initial=Task.Priority.MEDIUM)
+    due_date = forms.DateField(required=False, label="Due date", widget=forms.DateInput(attrs={"type": "date"}))
+    estimated_hours = _hours_field()
+    details = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2, "placeholder": "Details (optional)"}))
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("kind") == "self" and not cleaned.get("due_date"):
+            self.add_error("due_date", "Pick a due date for your task.")
+        return cleaned
+
+
+class ClientForm(forms.ModelForm):
+    class Meta:
+        model = Client
+        fields = ["name"]
+        widgets = {"name": forms.TextInput(attrs={"placeholder": "e.g. Peanutji"})}
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        if Client.objects.filter(name__iexact=name).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError("That client is already on the list.")
+        return name
+
+
+class HolidayForm(forms.ModelForm):
+    class Meta:
+        model = Holiday
+        fields = ["date", "name"]
+        widgets = {
+            "date": forms.DateInput(attrs={"type": "date"}),
+            "name": forms.TextInput(attrs={"placeholder": "e.g. Diwali"}),
+        }
+
+
+class LeaveForm(forms.ModelForm):
+    class Meta:
+        model = Leave
+        fields = ["user", "start_date", "end_date", "note"]
+        labels = {"user": "Person", "start_date": "From", "end_date": "To"}
+        widgets = {
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "note": forms.TextInput(attrs={"placeholder": "Optional note"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["user"].queryset = User.objects.filter(is_active=True)
+        self.fields["user"].label_from_instance = lambda u: u.display_name
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("start_date"), cleaned.get("end_date")
+        if start and end and end < start:
+            self.add_error("end_date", "The end date can't be before the start date.")
+        return cleaned

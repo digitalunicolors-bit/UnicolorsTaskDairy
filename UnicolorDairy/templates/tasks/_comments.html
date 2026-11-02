@@ -1,14 +1,17 @@
 {% load notiftags %}<div class="comments" data-comments>
-  <h3>Comments <span class="muted">({{ comments|length }})</span></h3>
+  <h3>Comments</h3>
 
   {% for c in comments %}
+    {% if c.deleted_at %}
+    <div class="comment deleted"><span class="muted small">Comment by {{ c.author.display_name|default:"someone" }} was deleted by {{ c.deleted_by.display_name|default:"someone" }} on {{ c.deleted_at|date:"j M, g:i A" }}. Admins can see the text in the activity log.</span></div>
+    {% else %}
     <div class="comment">
       <span class="avatar sm">{{ c.author.initials|default:"?" }}</span>
       <div class="comment-body">
         <div class="comment-meta">
           <b>{{ c.author.display_name|default:"Removed user" }}</b>
           <span class="muted small">{{ c.created_at|date:"j M, g:i A" }} · {{ c.created_at|timesince }} ago</span>
-          {% if user.is_admin or c.author_id == user.id %}
+          {% if t|can_manage:user or c.author_id == user.id %}
             <form method="post" action="{% url 'task_comment_delete' c.pk %}" data-comment-form data-confirm="Delete this comment?">{% csrf_token %}
               <button class="link-btn" title="Delete comment">Delete</button>
             </form>
@@ -17,6 +20,7 @@
         <div class="comment-text">{{ c.body|mentionize|linebreaksbr }}</div>
       </div>
     </div>
+    {% endif %}
   {% empty %}
     <p class="muted small">No comments yet. Type <b>@</b> to tag someone from the team.</p>
   {% endfor %}

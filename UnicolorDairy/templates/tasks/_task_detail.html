@@ -6,6 +6,8 @@
       <div class="row">
         <span class="st s-{{ t.status }}">{{ t.get_status_display }}</span>
         <span class="pill p-{{ t.priority }}">{{ t.get_priority_display }} priority</span>
+        {% if t.client %}<span class="pill client">{{ t.client.name }}</span>{% endif %}
+        {% if t.is_confidential %}<span class="pill">🔒 Confidential</span>{% endif %}
         {% if t.is_late %}<span class="pill late">Overdue</span>{% elif t.finished_late %}<span class="pill late">Finished late</span>{% endif %}
       </div>
       <h2>{{ t.title }}</h2>
@@ -15,8 +17,10 @@
 
   <div class="td-grid">
     <div><small>Assigned to</small><b><span class="avatar xs">{{ t.assignee.initials }}</span>{{ t.assignee.display_name }}</b>{% if t.assignee.designation %}<span class="muted small">{{ t.assignee.designation }}</span>{% endif %}</div>
+    {% with co=t.collaborators.all %}{% if co %}<div><small>Working with</small><b>{% for p in co %}{{ p.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</b></div>{% endif %}{% endwith %}
     <div><small>Assigned by</small><b>{{ t.assigned_by.display_name|default:"—" }}</b></div>
-    <div><small>Due date</small><b class="{% if t.is_late %}red{% endif %}">{{ t.due_date|date:"D, j M Y" }}</b></div>
+    <div><small>Due date</small><b class="{% if t.is_late %}red{% endif %}">{{ t.due_date|date:"D, j M Y" }}</b>{% if t.due_date_moved %}<span class="muted small">First due {{ t.original_due_date|date:"j M" }}</span>{% endif %}{% if away_on_due %}<span class="muted small">{{ t.assignee.display_name }} is on leave that day</span>{% endif %}</div>
+    {% if t.estimated_hours or t.actual_hours %}<div><small>Time</small><b>{% if t.estimated_hours %}{{ t.estimated_hours|floatformat:"-1" }}h estimated{% endif %}{% if t.actual_hours %}{% if t.estimated_hours %} · {% endif %}{{ t.actual_hours|floatformat:"-1" }}h actual{% endif %}</b></div>{% endif %}
     <div><small>Created</small><b>{{ t.created_at|date:"j M Y, g:i A" }}</b></div>
     <div><small>Started</small><b>{{ t.started_at|date:"j M Y, g:i A"|default:"Not started" }}</b></div>
     <div><small>Submitted</small><b>{{ t.submitted_at|date:"j M Y, g:i A"|default:"—" }}</b></div>
@@ -29,9 +33,59 @@
     {% if t.details %}<div class="td-text">{{ t.details|mentionize|linebreaksbr }}</div>{% else %}<p class="muted">No details were added.</p>{% endif %}
   </section>
 
-  {% with atts=t.attachments.all %}{% if atts %}
+  {% if t.status == "hold" %}
   <section>
-    <h3>Files <span class="muted">({{ atts|length }})</span></h3>
+    <h3>On hold</h3>
+    <div class="note hold"><b>{{ t.get_hold_kind_display }}{% if t.hold_since %} since {{ t.hold_since|date:"j M" }}{% endif %}:</b> {{ t.hold_note|urlize }}</div>
+  </section>
+  {% endif %}
+
+  {% if pending_extension %}
+  <section>
+    <h3>More time requested</h3>
+    <div class="note hold">
+      <b>{{ pending_extension.requested_by.display_name|default:"Someone" }}</b> asked to move the deadline to <b>{{ pending_extension.requested_date|date:"D, j M Y" }}</b>: {{ pending_extension.reason|urlize }}
+      {% if can_approve %}
+      <form method="post" class="ext-decide" action="{% url 'extension_decide' pending_extension.pk 'approve' %}">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ reopen_next }}">
+        <input type="text" name="note" maxlength="500" placeholder="Note (optional)">
+        <button class="sm ok">Approve</button>
+        <button class="sm" formaction="{% url 'extension_decide' pending_extension.pk 'decline' %}">Decline</button>
+      </form>
+      {% else %}<div class="muted small">The deadline stays the same until this is decided.</div>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section>
+    <h3>Checklist{% with p=t.subtask_progress %}{% if p %} <span class="muted">{{ p.done }}/{{ p.total }}</span>{% endif %}{% endwith %}</h3>
+    <div class="subtasks">
+      {% for s in t.subtasks.all %}
+        <div class="subtask {% if s.is_done %}is-done{% endif %}">
+          {% if can_work %}
+            <form method="post" action="{% url 'subtask_toggle' s.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ reopen_next }}">
+              <button class="tick" aria-label="{% if s.is_done %}Mark not done{% else %}Mark done{% endif %}">{% if s.is_done %}☑{% else %}☐{% endif %}</button>
+            </form>
+          {% else %}<span class="tick">{% if s.is_done %}☑{% else %}☐{% endif %}</span>{% endif %}
+          <span class="grow">{{ s.title }}</span>
+          {% if can_work %}
+            <form method="post" action="{% url 'subtask_delete' s.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ reopen_next }}"><button class="link-btn" aria-label="Remove step">Remove</button></form>
+          {% endif %}
+        </div>
+      {% empty %}<p class="muted small">No steps yet.</p>{% endfor %}
+      {% if can_work %}
+        <form method="post" class="subtask-add" action="{% url 'subtask_add' t.pk %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ reopen_next }}">
+          <input type="text" name="title" maxlength="200" required placeholder="Add a step…">
+          <button class="sm">Add</button>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+
+  {% with atts=t.attachments.all %}{% if atts or can_work %}
+  <section>
+    <h3>Files {% if atts %}<span class="muted">({{ atts|length }})</span>{% endif %}</h3>
     <div class="td-files">
       {% for a in atts %}
         {% if a.kind == "voice" %}
@@ -42,12 +96,33 @@
             <span>{{ a.original_name|truncatechars:28 }} · {{ a.size_label }}</span>
           </a>
         {% else %}
-          <a class="att" href="{% url 'attachment' a.pk %}" target="_blank" rel="noopener">📎 {{ a.original_name }} <span class="muted">{{ a.size_label }}</span></a>
+          <a class="att {% if a.kind == 'work' %}att-work{% endif %}" href="{% url 'attachment' a.pk %}" target="_blank" rel="noopener">{% if a.kind == 'work' %}✅ Finished work:{% else %}📎{% endif %} {{ a.original_name }} <span class="muted">{{ a.size_label }}</span></a>
         {% endif %}
       {% endfor %}
     </div>
+    {% if can_work %}
+      <form method="post" class="file-add" action="{% url 'task_upload' t.pk %}" enctype="multipart/form-data">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ reopen_next }}">
+        <input type="file" name="files" multiple required>
+        <button class="sm">Upload</button>
+        <span class="muted small">Up to 10 files, {{ max_upload_mb }} MB each.</span>
+      </form>
+    {% endif %}
   </section>
   {% endif %}{% endwith %}
+
+  {% if admin_view %}{% with seen=t.watchers.all %}{% if seen %}
+  <section>
+    <h3>Also has access</h3>
+    <div class="access-list">
+      {% for p in seen %}
+        <span class="pill who">{{ p.display_name }}
+          <form method="post" action="{% url 'watcher_remove' t.pk p.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ reopen_next }}"><button class="link-btn" aria-label="Remove {{ p.display_name }}'s access">×</button></form>
+        </span>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}{% endwith %}{% endif %}
 
   {% if t.admin_note and t.status == "change" %}
   <section>
@@ -73,28 +148,56 @@
     {% if activity %}
     <ol class="td-timeline">
       {% for a in activity %}
+        {% if a.action != "comment_del" or user.is_admin %}
         <li class="tl-{{ a.action }}">
           <div><b>{{ a.actor.display_name|default:"Someone" }}</b> {{ a.get_action_display|lower }}</div>
           <small class="muted">{{ a.created_at|date:"j M Y, g:i A" }} · {{ a.created_at|timesince }} ago</small>
           {% if a.note %}<div class="td-act-note">{{ a.note|urlize|linebreaksbr }}</div>{% endif %}
         </li>
+        {% endif %}
       {% endfor %}
     </ol>
     {% else %}<p class="muted">No activity yet.</p>{% endif %}
   </section>
 
   <div class="actions td-actions">
-    {% if t.assignee_id == user.id %}
-      {% if t.status == "todo" %}
+    {% if can_work %}
+      {% if t.status == "todo" and is_worker %}
         <form method="post" action="{% url 'task_action' t.pk 'start' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ next }}"><button class="sm">Start</button></form>
       {% endif %}
-      {% if t.status == "todo" or t.status == "progress" or t.status == "change" %}
+      {% if is_worker and needs_work %}
         <details class="inline">
           <summary class="btn sm primary">Mark complete</summary>
           <form method="post" action="{% url 'task_action' t.pk 'submit' %}">{% csrf_token %}
             <input type="hidden" name="next" value="{{ next }}">
             <textarea name="note" rows="2" maxlength="1000" placeholder="Optional: what you did, file link…"></textarea>
+            <label class="small">Time it took, in hours (optional)<input type="number" name="actual_hours" min="0" max="999" step="0.5"></label>
             <button class="sm primary">Submit for approval</button>
+          </form>
+        </details>
+      {% endif %}
+      {% if needs_work %}
+        <details class="inline">
+          <summary class="btn sm">⏸ Put on hold</summary>
+          <form method="post" action="{% url 'task_action' t.pk 'hold' %}">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+            <select name="hold_kind" required>{% for value, label in hold_kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+            <textarea name="note" rows="2" maxlength="500" required placeholder="What are you waiting for?"></textarea>
+            <button class="sm">Put on hold</button>
+          </form>
+        </details>
+      {% endif %}
+      {% if t.status == "hold" %}
+        <form method="post" action="{% url 'task_action' t.pk 'resume' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ next }}"><button class="sm primary">▶ Resume</button></form>
+      {% endif %}
+      {% if can_extend and not pending_extension %}
+        <details class="inline">
+          <summary class="btn sm">📅 {% if can_approve %}Move deadline{% else %}Ask for more time{% endif %}</summary>
+          <form method="post" action="{% url 'extension_request' t.pk %}">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ reopen_next }}">
+            <input type="date" name="requested_date" min="{{ min_extension_date }}" required aria-label="New due date">
+            <textarea name="reason" rows="2" maxlength="1000" required placeholder="Why does the date need to move?"></textarea>
+            <button class="sm">{% if can_approve %}Move deadline{% else %}Send request{% endif %}</button>
           </form>
         </details>
       {% endif %}
@@ -103,7 +206,9 @@
     {% if admin_view %}
       <a class="btn sm" href="{% url 'task_edit' t.pk %}?next={{ next|urlencode }}" data-modal-load>✏️ Edit</a>
       {% if t.status == "review" %}
+        {% if can_approve %}
         <form method="post" action="{% url 'task_action' t.pk 'approve' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ next }}"><button class="sm ok">Approve</button></form>
+        {% else %}<span class="muted small">Someone else needs to approve your own work.</span>{% endif %}
       {% endif %}
       {% if t.status == "review" or t.status == "done" %}
         <details class="inline">
@@ -116,11 +221,12 @@
         </details>
       {% endif %}
       <details class="inline">
-        <summary class="btn sm danger">Delete</summary>
+        <summary class="btn sm danger">Archive</summary>
         <form method="post" action="{% url 'task_action' t.pk 'delete' %}">{% csrf_token %}
           <input type="hidden" name="next" value="{{ next }}">
-          <span class="small">Delete this task permanently?</span>
-          <button class="sm danger">Yes, delete</button>
+          <span class="small">Remove from the board? Everything is kept and it can be restored.</span>
+          <input type="text" name="note" maxlength="500" placeholder="Reason (optional)">
+          <button class="sm danger">Archive task</button>
         </form>
       </details>
     {% endif %}

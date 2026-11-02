@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<div class="narrow">
+  <div class="panel">
+    <h2>Two-step login</h2>
+    <p class="muted">Adds a second check when you log in: a 6-digit code from an app on your phone, such as Google Authenticator or Microsoft Authenticator. Someone who finds your password still can't get in.</p>
+    {% if error %}<div class="banner error" role="alert">{{ error }}</div>{% endif %}
+
+    {% if user.totp_enabled %}
+      <p><b class="ok-text">✓ Two-step login is on.</b></p>
+      <details class="inline">
+        <summary class="btn sm danger">Turn it off</summary>
+        <form method="post" class="stack">{% csrf_token %}
+          <input type="hidden" name="action" value="disable">
+          <label>Your password<input type="password" name="password" autocomplete="current-password" required></label>
+          <button class="sm danger">Turn off two-step login</button>
+        </form>
+      </details>
+    {% elif setup_secret %}
+      <ol class="setup-steps">
+        <li>In your authenticator app, add an account by scanning this code.
+          <div id="qr" class="qr-box" data-uri="{{ setup_uri }}"></div>
+          <div class="muted small">Can't scan it? Choose “enter a setup key” and type: <code class="setup-key">{{ setup_secret }}</code></div>
+        </li>
+        <li>Type the 6-digit code the app shows.
+          <form method="post" class="row setup-confirm">{% csrf_token %}
+            <input type="hidden" name="action" value="confirm">
+            <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required autofocus aria-label="6-digit code">
+            <button class="primary">Turn on</button>
+          </form>
+        </li>
+      </ol>
+    {% else %}
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="start">
+        <button class="primary">Set up two-step login</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if setup_secret %}
+<script src="{% static 'js/qrcode.js' %}"></script>
+<script>
+(function () {
+  const box = document.getElementById("qr");
+  if (!box || typeof qrcode === "undefined") return;
+  const qr = qrcode(0, "M");
+  qr.addData(box.dataset.uri);
+  qr.make();
+  box.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 10, scalable: true });
+})();
+</script>
+{% endif %}
+{% endblock %}

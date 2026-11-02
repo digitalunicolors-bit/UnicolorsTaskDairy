@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Two-step login · Unicolors Daily Tasks{% endblock %}
+{% block content %}
+<div class="narrow">
+  <div class="panel">
+    <h2>Enter your code</h2>
+    <p class="muted">Open your authenticator app and type the 6-digit code for Unicolors Tasks.</p>
+    {% if locked %}<div class="banner error" role="alert">Too many wrong attempts. Please try again in {{ lock_minutes }} minutes.</div>
+    {% elif error %}<div class="banner error" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" class="stack">
+      {% csrf_token %}
+      <label>6-digit code<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required autofocus {% if locked %}disabled{% endif %}></label>
+      <div class="row">
+        <button class="primary" {% if locked %}disabled{% endif %}>Log in</button>
+        <a class="btn" href="{% url 'login' %}">Start again</a>
+      </div>
+    </form>
+    <p class="muted small">Lost your phone? Ask your admin to turn off two-step login for your account.</p>
+  </div>
+</div>
+{% endblock %}

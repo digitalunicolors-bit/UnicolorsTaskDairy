@@ -45,3 +45,5 @@ services:
         sync: false
       - key: DJANGO_SUPERUSER_PASSWORD
         sync: false
+      # Locked out of the owner account? Add DJANGO_SUPERUSER_FORCE_RESET=1 here, redeploy,
+      # log in with the password above, then remove it. Normal deploys never change the password.

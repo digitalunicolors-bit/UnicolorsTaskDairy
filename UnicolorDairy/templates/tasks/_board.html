@@ -5,6 +5,7 @@
   <div class="stat"><small>In progress</small><b>{{ stats.progress }}</b></div>
   <div class="stat"><small>Needs approval</small><b>{{ stats.review }}</b></div>
   <div class="stat"><small>Changes requested</small><b>{{ stats.change }}</b></div>
+  <div class="stat"><small>On hold</small><b>{{ stats.hold }}</b></div>
   <div class="stat"><small>Overdue</small><b class="{% if stats.late %}red{% endif %}">{{ stats.late }}</b></div>
   <div class="stat"><small>Completed</small><b>{{ stats.pct }}%</b><div class="progress"><i style="width:{{ stats.pct }}%"></i></div></div>
 </div>
@@ -51,6 +52,7 @@
     const from = card.dataset.status;
     const canWork = card.dataset.owner === "1" || isAdmin;
     if (from === to) return {};
+    if (to === "hold" || from === "hold") return { error: "Open the task to put it on hold or resume it, so a reason is recorded." };
     if (to === "todo") return { error: "Tasks can't be moved back to To Do." };
     if (to === "progress") {
       if (from !== "todo") return { error: "Only To Do tasks can be moved to In Progress." };
@@ -61,12 +63,12 @@
       return canWork ? { action: "submit" } : { error: "Only the person assigned can submit this task." };
     }
     if (to === "done") {
-      if (!isAdmin) return { error: "Only an admin can approve tasks." };
+      if (!isAdmin) return { error: "Only an admin or team lead can approve tasks." };
       if (from !== "review") return { error: "Submit the task for approval first." };
       return { action: "approve" };
     }
     if (to === "change") {
-      if (!isAdmin) return { error: "Only an admin can request changes." };
+      if (!isAdmin) return { error: "Only an admin or team lead can request changes." };
       if (!["review", "done"].includes(from)) return { error: "Only tasks waiting for approval or done can get change requests." };
       return { action: "changes" };
     }

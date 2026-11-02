@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import security, views, views_more
 
 urlpatterns = [
     path("", views.home, name="home"),
@@ -25,6 +25,30 @@ urlpatterns = [
     path("invite/<uidb64>/<token>/", views.accept_invite, name="accept_invite"),
     path("team/<int:pk>/resend-invite/", views.resend_invite, name="resend_invite"),
     path("team/resend-invites/", views.resend_all_invites, name="resend_all_invites"),
+
+    path("healthz/", views_more.healthz, name="healthz"),
+    path("security/", security.security_settings, name="security"),
+    path("team/<int:pk>/reset-two-step/", security.reset_two_step, name="reset_two_step"),
+    path("team/<int:pk>/handover/", views_more.handover, name="handover"),
+    path("team/email-problems/clear/", views_more.email_failures_clear, name="email_failures_clear"),
+
+    path("task/<int:pk>/upload/", views_more.task_upload, name="task_upload"),
+    path("task/<int:pk>/subtask/", views_more.subtask_add, name="subtask_add"),
+    path("subtask/<int:pk>/toggle/", views_more.subtask_toggle, name="subtask_toggle"),
+    path("subtask/<int:pk>/delete/", views_more.subtask_delete, name="subtask_delete"),
+    path("task/<int:pk>/access/<int:user_pk>/remove/", views_more.watcher_remove, name="watcher_remove"),
+    path("task/<int:pk>/more-time/", views_more.extension_request, name="extension_request"),
+    path("more-time/<int:pk>/<str:decision>/", views_more.extension_decide, name="extension_decide"),
+
+    path("archive/", views_more.archive, name="archive"),
+    path("archive/<int:pk>/restore/", views_more.archive_restore, name="archive_restore"),
+    path("clients/", views_more.clients, name="clients"),
+    path("clients/<int:pk>/", views_more.client_update, name="client_update"),
+    path("calendar/", views_more.calendar_page, name="calendar"),
+    path("calendar/holiday/<int:pk>/delete/", views_more.holiday_delete, name="holiday_delete"),
+    path("calendar/leave/<int:pk>/delete/", views_more.leave_delete, name="leave_delete"),
+    path("my-tasks/add/", views_more.member_task_add, name="member_task_add"),
+    path("requests/<int:pk>/<str:decision>/", views_more.request_decide, name="request_decide"),
 
     # search & recurring tasks
     path("search/", views.search, name="search"),

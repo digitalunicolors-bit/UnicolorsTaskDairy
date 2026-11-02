@@ -3157,3 +3157,53 @@ table.sortable th.desc::after {
         min-width: 0
     }
 }
+
+/* ---------- on hold, clients, checklist and other added pieces ---------- */
+:root { --c-hold: #7c6bb0; }
+@media (prefers-color-scheme:dark) { :root { --c-hold: #a897d8; } }
+.s-hold { --c: var(--c-hold); background: var(--c-hold); }
+.st.s-hold { background: color-mix(in srgb, var(--c-hold) 16%, transparent); color: var(--c-hold); }
+.board { grid-template-columns: repeat(6, minmax(200px, 1fr)); }
+@media (max-width: 900px) { .board { grid-template-columns: repeat(6, minmax(240px, 82vw)); } }
+.note.hold { border-left: 3px solid var(--c-hold); background: color-mix(in srgb, var(--c-hold) 10%, transparent); padding: 8px 10px; border-radius: 6px; }
+.pill.client { background: color-mix(in srgb, var(--c-prog) 12%, transparent); color: var(--c-prog); font-weight: 600; }
+.att-work { border-color: var(--c-done); }
+.subtasks { display: flex; flex-direction: column; gap: 4px; }
+.subtask { display: flex; align-items: center; gap: 8px; }
+.subtask form { margin: 0; }
+.subtask.is-done .grow { text-decoration: line-through; color: var(--muted); }
+.subtask .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.subtask .tick { background: none; border: 0; padding: 2px 4px; font-size: 16px; cursor: pointer; color: inherit; min-height: 0; }
+.subtask-add, .file-add, .ext-decide, .req-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.subtask-add input[type=text], .ext-decide input[type=text] { flex: 1 1 180px; min-width: 0; }
+.file-add input[type=file] { flex: 1 1 200px; min-width: 0; }
+.access-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.access-list form { display: inline; margin: 0; }
+.access-list .pill { display: inline-flex; align-items: center; gap: 4px; }
+.comment.deleted { padding: 6px 0; }
+.wl-tag { font-size: 11px; color: var(--c-hold); font-weight: 600; }
+.req-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
+.req-row .q-main { flex: 1 1 240px; min-width: 0; }
+.assign-options { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; font-weight: 400; }
+.assign-options select { width: auto; max-width: 100%; }
+.radio-row { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.member-add { margin-bottom: 14px; }
+.member-add h3 { margin: 14px 0 4px; font-size: 13px; }
+.banner.warning { background: color-mix(in srgb, var(--c-review) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c-review) 40%, transparent); color: var(--ink); padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; }
+.ok-text { color: var(--c-done); }
+.setup-steps { padding-left: 20px; }
+.setup-steps li { margin-bottom: 16px; }
+.qr-box { width: 220px; max-width: 100%; margin: 10px 0; background: #fff; border-radius: 8px; }
+.qr-box svg { display: block; width: 100%; height: auto; }
+.setup-key { font-size: 13px; overflow-wrap: anywhere; }
+.setup-confirm { margin-top: 8px; }
+.setup-confirm input { max-width: 140px; }
+.handover-form { margin-top: 14px; }
+.nowrap { white-space: nowrap; }
+
+.form-grid.two-col { grid-template-columns: 1fr 1fr; }
+.form-grid.two-col input, .form-grid.two-col select { width: 100%; min-width: 0; }
+label.check { display: flex; flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
+label.check input { width: auto; flex: none; margin: 0; }
+.radio-row label.check input, .assign-options label.check input { width: 16px; height: 16px; }
+button[hidden] { display: none; }

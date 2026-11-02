@@ -14,11 +14,16 @@
     <label class="t">Task{{ form.title }}</label>
     <label>Priority{{ form.priority }}</label>
     <label>Due date{{ form.due_date }}</label>
+    <label>Client / project{{ form.client }}</label>
+    <label>Estimated hours{{ form.estimated_hours }}</label>
     <label class="full">Assigned to{{ form.assignee }}</label>
+    <label class="full">Working with (hold Ctrl to pick several){{ form.collaborators }}</label>
+    <label class="full check">{{ form.is_confidential }} Confidential: tagging won't give other people access</label>
     <label class="full">Brief (type @ to tag someone){{ form.details }}</label>
     <p class="full muted small edit-hint">
       The person working on it is notified of what changed. If you reassign it, the new person gets the task
       (with its files and comments), and a new due date sets up fresh reminders automatically.
+      If the due date has already passed, moving it here won't remove the lateness. Use “Move deadline” with a reason for that.
     </p>
     <div class="full row">
       <button class="primary" type="submit">Save changes</button>

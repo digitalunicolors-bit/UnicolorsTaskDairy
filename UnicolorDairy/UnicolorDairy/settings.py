@@ -1,5 +1,6 @@
 """Settings for the Unicolors Daily Tasks app. Configure via environment variables (see .env.example)."""
 import os
+import sys
 import dj_database_url
 from pathlib import Path
 
@@ -65,6 +66,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "Home.middleware.ForcePasswordChangeMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -144,7 +146,22 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
+TESTING = "test" in sys.argv
+if TESTING or DEBUG:
+    STORAGES["staticfiles"] = {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}
+if TESTING:
+    EMAIL_SEND_IN_BACKGROUND = False
+    REMINDERS_AUTO = False
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Days the office is closed every week (Monday=0 … Sunday=6). Default: Sunday.
+WEEKLY_OFF_DAYS = [int(d) for d in env_list("WEEKLY_OFF_DAYS", "6") if d.isdigit()]
+
+# Login protection
+LOGIN_FAIL_LIMIT = 8        # wrong attempts per account…
+LOGIN_FAIL_IP_LIMIT = 40    # …or per network address…
+LOGIN_LOCK_MINUTES = 15     # …within this many minutes pauses logins
 
 if env_bool("DJANGO_HTTPS"):
     SESSION_COOKIE_SECURE = True

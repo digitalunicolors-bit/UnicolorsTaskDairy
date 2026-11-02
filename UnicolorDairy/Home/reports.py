@@ -67,7 +67,6 @@ class Summary:
 
 def summarize(tasks):
     s = Summary()
-    today = timezone.localdate()
     for t in tasks:
         s.assigned += 1
         s.changes += t.change_count
@@ -83,9 +82,11 @@ def summarize(tasks):
                 s.turnaround_hours.append((t.done_at - t.created_at).total_seconds() / 3600)
         else:
             s.open += 1
-            if t.due_date < today:
+            if t.is_late:
                 s.late += 1
                 s.overdue_now += 1
+            elif t.status == Task.Status.REVIEW and t.submitted_late:
+                s.late += 1
     return s
 
 
@@ -242,8 +243,9 @@ def write_csv(response, tasks):
     response.write("﻿")  # BOM so Excel opens UTF-8 correctly
     w = csv.writer(response)
     w.writerow([
-        "Due date", "Member", "Task", "Priority", "Status", "Assigned on", "Submitted", "Approved",
-        "Approved by", "On time", "Change requests", "Turnaround (hours)", "Member note", "Admin note",
+        "Due date", "First due date", "Client / project", "Member", "Shared with", "Task", "Priority", "Status",
+        "Assigned on", "Submitted", "Approved", "Approved by", "On time", "Change requests", "Turnaround (hours)",
+        "Estimated hours", "Actual hours", "Member note", "Admin note",
     ])
     fmt = lambda dt: timezone.localtime(dt).strftime("%d-%m-%Y %H:%M") if dt else ""
     for t in tasks:
@@ -253,9 +255,13 @@ def write_csv(response, tasks):
             on_time = "No (overdue)" if t.is_late else ""
         hours = round((t.done_at - t.created_at).total_seconds() / 3600, 1) if t.done_at and t.created_at else ""
         w.writerow([
-            t.due_date.strftime("%d-%m-%Y"), t.assignee.display_name, t.title, t.get_priority_display(),
+            t.due_date.strftime("%d-%m-%Y"), t.original_due_date.strftime("%d-%m-%Y") if t.original_due_date else "",
+            t.client.name if t.client else "", t.assignee.display_name,
+            ", ".join(p.display_name for p in t.collaborators.all()), t.title, t.get_priority_display(),
             t.get_status_display(), fmt(t.created_at), fmt(t.submitted_at), fmt(t.done_at),
             t.approved_by.display_name if t.approved_by else "", on_time, t.change_count, hours,
+            t.estimated_hours if t.estimated_hours is not None else "",
+            t.actual_hours if t.actual_hours is not None else "",
             t.member_note, t.admin_note,
         ])
     return response

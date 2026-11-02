@@ -53,3 +53,23 @@ def mentionize(text, autoescape=True):
         chip = f'<span class="mention" title="@{escape(u.username)}">@{escape(u.display_name)}</span>'
         html = html.replace(f"\ue000{i}\ue001", chip)
     return mark_safe(html)
+
+
+@register.filter
+def can_work(task, user):
+    return task.can_work(user)
+
+
+@register.filter
+def can_manage(task, user):
+    return task.can_manage(user)
+
+
+@register.filter
+def can_approve(task, user):
+    return task.can_approve(user)
+
+
+@register.filter
+def is_worker(task, user):
+    return task.is_worker(user)

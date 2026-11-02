@@ -25,6 +25,7 @@
           <span class="result-title">{{ r.title }}</span>
         </div>
         <div class="meta">
+          {% if r.task.client %}<span class="pill client">{{ r.task.client.name }}</span>{% endif %}
           <span class="pill p-{{ r.task.priority }}">{{ r.task.get_priority_display }}</span>
           <span class="pill {% if r.task.is_late %}late{% endif %}">{% if r.task.is_late %}Overdue · {% else %}Due {% endif %}{{ r.task.due_date|date:"j M Y" }}</span>
           <span class="pill who">{{ r.task.assignee.display_name }}</span>

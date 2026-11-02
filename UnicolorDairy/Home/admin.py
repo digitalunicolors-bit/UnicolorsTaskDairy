@@ -8,7 +8,7 @@ from .models import Task, TaskActivity, TaskAttachment, User
 class UnicolorsUserAdmin(UserAdmin):
     list_display = ("username", "first_name", "last_name", "role", "designation", "is_active")
     list_filter = ("role", "is_active")
-    fieldsets = UserAdmin.fieldsets + (("Unicolors", {"fields": ("role", "designation")}),)
+    fieldsets = UserAdmin.fieldsets + (("Unicolors", {"fields": ("role", "designation", "manager")}),)
     add_fieldsets = UserAdmin.add_fieldsets + (("Unicolors", {"fields": ("first_name", "last_name", "role", "designation")}),)
 
 
