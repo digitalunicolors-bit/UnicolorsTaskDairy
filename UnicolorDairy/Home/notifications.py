@@ -27,7 +27,7 @@ STYLES = {
     "approved": ("#2a9d5c", "#ebf7f0", "✅", "Approved"),
     "changes": ("#d6409f", "#fcedf6", "✏️", "Changes requested"),
     "reopened": ("#d6409f", "#fcedf6", "↩️", "Reopened"),
-    "welcome": ("#e5484d", "#fdeeee", "👋", "Invitation"),
+    "welcome": ("#0B1220", "#FFF4CC", "👋", "Invitation"),
     "reminder_week": ("#2f6fde", "#eef3fd", "⏰", "Coming up"),
     "reminder_day": ("#b7791f", "#fdf6e9", "⏰", "Due tomorrow"),
     "reminder_due": ("#d93d42", "#fdeeee", "⏰", "Due today"),
@@ -79,7 +79,7 @@ def _context(kind, subject, heading, greeting_name, intro, rows=(), notes=(), bu
              task_list=()):
     color, bg, icon, label = STYLES[kind]
     if button:
-        button.setdefault("color", color if kind != "welcome" else "#e5484d")
+        button.setdefault("color", color)
     return {
         "subject": subject,
         "preheader": preheader or intro,

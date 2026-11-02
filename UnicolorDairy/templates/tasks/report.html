@@ -86,7 +86,7 @@
 
   {% if daily %}
   <div class="panel">
-    <h2>Tasks due each day <small>dark = done</small></h2>
+    <h2>Tasks due each day <small>bright = done</small></h2>
     <div class="daychart" role="img" aria-label="Tasks due and done per day">
       {% for d in daily %}
         <div class="dc-col" title="{{ d.day|date:'D j M' }}: {{ d.done }} of {{ d.due }} done">
