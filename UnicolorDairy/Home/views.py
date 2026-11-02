@@ -32,7 +32,7 @@ from .forms import (
     TaskEditForm,
 )
 from .models import (
-    AdminNote, Client, EmailFailure, LoginAttempt, ExtensionRequest, Notification, RecurringTask, Task, TaskActivity, TaskAttachment,
+    AdminNote, Client, EmailFailure, Leave, LoginAttempt, leaves_managed_by, ExtensionRequest, Notification, RecurringTask, Task, TaskActivity, TaskAttachment,
     TaskComment, TaskRequest, User, active_admins, find_mentioned_users, is_office_closed, on_leave_ids,
     people_managed_by,
 )
@@ -273,6 +273,7 @@ def dashboard(request):
         "orphaned": orphaned,
         "pending_extensions": pending_extensions,
         "task_requests": list(request_scope),
+        "pending_leave_count": leaves_managed_by(request.user).filter(status=Leave.Status.PENDING).count(),
         "form": form,
         "board": _board(tasks),
         "stats": _stats(tasks),
@@ -1258,6 +1259,9 @@ def notification_open(request, pk):
     if not n.is_read:
         n.is_read = True
         n.save(update_fields=["is_read"])
+    if n.verb == Notification.Verb.LEAVE:
+        mine = n.message.startswith("Your leave") or not request.user.is_lead
+        return redirect("my_leave" if mine else "leave_approvals")
     t = n.task
     if t is None or (t.archived_at and not request.user.is_admin):  # task was removed
         return redirect("notification_list")

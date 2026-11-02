@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% include "tasks/_leave_tabs.html" with active="calendar" %}
 <div class="rep-charts">
   <div class="panel">
     <h2>Office holidays</h2>
@@ -20,7 +21,7 @@
     <p class="muted small">On these days, and on Sundays, “every working day” tasks aren't created, and due dates from schedules move to the next working day.</p>
   </div>
   <div class="panel">
-    <h2>Leave</h2>
+    <h2>Add leave for someone <small>approved straight away</small></h2>
     <form method="post" class="form-grid two-col">
       {% csrf_token %}
       <input type="hidden" name="kind" value="leave">
@@ -38,7 +39,7 @@
         <form method="post" action="{% url 'leave_delete' l.pk %}">{% csrf_token %}<button class="sm">Remove</button></form>
       </div>
     {% empty %}<p class="muted small">No leave added.</p>{% endfor %}
-    <p class="muted small">While someone is on leave, they get no reminders, recurring tasks skip them and admins are told, and they're marked on the dashboard.</p>
+    <p class="muted small">While someone is on approved leave, they get no reminders, recurring tasks skip them and admins are told, and they're marked on the dashboard.</p>
   </div>
 </div>
 {% endblock %}

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django import forms
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
@@ -335,6 +337,50 @@ class HolidayForm(forms.ModelForm):
             "date": forms.DateInput(attrs={"type": "date"}),
             "name": forms.TextInput(attrs={"placeholder": "e.g. Diwali"}),
         }
+
+
+class LeaveRequestForm(forms.ModelForm):
+    """A person applying for their own leave."""
+
+    class Meta:
+        model = Leave
+        fields = ["kind", "start_date", "end_date", "note", "cover"]
+        labels = {"kind": "Type of leave", "start_date": "From", "end_date": "To", "note": "Reason", "cover": "Who can cover? (optional)"}
+        widgets = {
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "note": forms.TextInput(attrs={"placeholder": "A short reason"}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        self.fields["note"].required = True
+        self.fields["kind"].initial = Leave.Kind.CASUAL
+        self.fields["cover"].required = False
+        self.fields["cover"].queryset = User.objects.filter(is_active=True).exclude(pk=user.pk)
+        self.fields["cover"].empty_label = "Not sure"
+        self.fields["cover"].label_from_instance = lambda u: u.display_name
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("start_date"), cleaned.get("end_date")
+        if not start or not end:
+            return cleaned
+        if end < start:
+            self.add_error("end_date", "The end date can't be before the start date.")
+            return cleaned
+        if start < timezone.localdate() - timedelta(days=30):
+            self.add_error("start_date", "Leave can only be applied for up to 30 days back.")
+        if (end - start).days > 90:
+            self.add_error("end_date", "Please apply for up to 90 days at a time.")
+        clash = Leave.objects.filter(
+            user=self.user, status__in=[Leave.Status.PENDING, Leave.Status.APPROVED],
+            start_date__lte=end, end_date__gte=start,
+        ).exists()
+        if clash:
+            raise forms.ValidationError("You already have leave applied for on some of these dates.")
+        return cleaned
 
 
 class LeaveForm(forms.ModelForm):

@@ -14,10 +14,10 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import notifications, reports
-from .forms import ClientForm, HolidayForm, LeaveForm, MemberTaskForm, MultipleFileField, _check_size
+from .forms import ClientForm, HolidayForm, LeaveForm, LeaveRequestForm, MemberTaskForm, MultipleFileField, _check_size
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, Notification, Subtask, Task, TaskActivity,
-    TaskAttachment, TaskRequest, User, active_admins, is_office_closed, people_managed_by,
+    TaskAttachment, TaskRequest, User, active_admins, is_office_closed, leaves_managed_by, people_managed_by,
 )
 from .views import S, _log, _safe_next, _parse_date, admin_required, manager_required, needs_handover
 
@@ -293,11 +293,10 @@ def calendar_page(request):
             return redirect("calendar")
         if request.POST.get("kind") == "leave" and leave_form.is_valid():
             leave = leave_form.save(commit=False)
-            leave.added_by = request.user
+            leave.added_by = leave.decided_by = request.user
+            leave.status, leave.decided_at = Leave.Status.APPROVED, timezone.now()
             leave.save()
-            count = Task.objects.filter(
-                assignee=leave.user, status__in=Task.NEEDS_WORK, due_date__range=(leave.start_date, leave.end_date),
-            ).count()
+            count = leave.tasks_due().count()
             messages.success(request, f"Added leave for {leave.user.display_name}.")
             if count:
                 messages.warning(request, f"{leave.user.display_name} has {count} task{'s' if count != 1 else ''} due during this leave. Reassign them or move the dates.")
@@ -306,7 +305,8 @@ def calendar_page(request):
         "holiday_form": holiday_form,
         "leave_form": leave_form,
         "holidays": Holiday.objects.filter(date__gte=today - timedelta(days=30)),
-        "leaves": Leave.objects.filter(end_date__gte=today - timedelta(days=30)).select_related("user"),
+        "leaves": Leave.objects.filter(status=Leave.Status.APPROVED, end_date__gte=today - timedelta(days=30)).select_related("user"),
+        "pending_leave_count": leaves_managed_by(request.user).filter(status=Leave.Status.PENDING).count(),
         "today": today,
     })
 
@@ -321,8 +321,171 @@ def holiday_delete(request, pk):
 @admin_required
 @require_POST
 def leave_delete(request, pk):
-    get_object_or_404(Leave, pk=pk).delete()
+    leave = get_object_or_404(Leave, pk=pk)
+    leave.status = Leave.Status.CANCELLED
+    leave.save(update_fields=["status"])
     return redirect("calendar")
+
+
+# ---------------------------------------------------------------- applying for leave
+
+
+def _tell_about_leave(people, actor, message):
+    Notification.objects.bulk_create([
+        Notification(recipient=p, actor=actor, verb=Notification.Verb.LEAVE, message=message[:300])
+        for p in people if p.pk != actor.pk
+    ])
+
+
+@login_required
+def my_leave(request):
+    """Everyone's own leave page: apply, follow requests, cancel, and see office holidays."""
+    user = request.user
+    today = timezone.localdate()
+    form = LeaveRequestForm(request.POST or None, user=user)
+    if request.method == "POST" and form.is_valid():
+        leave = form.save(commit=False)
+        leave.user, leave.added_by = user, user
+        approvers = leave.approvers()
+        leave.status = Leave.Status.PENDING if approvers else Leave.Status.APPROVED
+        if not approvers:  # the only admin: nobody else exists to approve
+            leave.decided_by, leave.decided_at = user, timezone.now()
+        leave.save()
+        if approvers:
+            _tell_about_leave(
+                approvers, user,
+                f"{user.display_name} applied for leave, {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+            )
+            notifications.leave_requested(leave, approvers)
+            messages.success(request, "Leave request sent. Nothing changes until it's approved.")
+        else:
+            messages.success(request, "Your leave is saved.")
+        return redirect("my_leave")
+    return render(request, "tasks/leave.html", {
+        "form": form,
+        "my_requests": user.leaves.select_related("decided_by", "cover")[:30],
+        "holidays": Holiday.objects.filter(date__gte=today)[:20],
+        "today": today,
+        "pending_leave_count": leaves_managed_by(user).filter(status=Leave.Status.PENDING).count() if user.is_lead else 0,
+    })
+
+
+@login_required
+def leave_check(request):
+    """While applying: the person's tasks due, and holidays, in the dates they picked."""
+    start = _parse_date(request.GET.get("start"), None)
+    end = _parse_date(request.GET.get("end"), None)
+    if not start or not end or end < start or (end - start).days > 366:
+        return JsonResponse({"tasks": [], "holidays": []})
+    tasks = Task.objects.filter(assignee=request.user, status__in=Task.NEEDS_WORK, due_date__range=(start, end))
+    return JsonResponse({
+        "tasks": [{"title": t.title, "due": f"{t.due_date:%d %b}"} for t in tasks],
+        "holidays": [{"name": h.name, "date": f"{h.date:%d %b}"} for h in Holiday.objects.filter(date__range=(start, end))],
+    })
+
+
+@login_required
+@require_POST
+def leave_cancel(request, pk):
+    leave = get_object_or_404(Leave.objects.select_related("user", "user__manager"), pk=pk, user=request.user)
+    if not leave.can_cancel:
+        messages.error(request, "This leave can't be cancelled.")
+        return redirect("my_leave")
+    was_approved = leave.status == Leave.Status.APPROVED
+    leave.status = Leave.Status.CANCELLED
+    leave.save(update_fields=["status"])
+    if was_approved:
+        people = leave.approvers()
+        _tell_about_leave(
+            people, request.user,
+            f"{request.user.display_name} cancelled their leave, {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+        )
+        notifications.leave_cancelled(leave, people)
+    messages.success(request, "Leave cancelled.")
+    return redirect("my_leave")
+
+
+@manager_required
+def leave_approvals(request):
+    """Leave waiting for a decision, with what each person's absence would affect."""
+    today = timezone.localdate()
+    scope = leaves_managed_by(request.user).select_related("user", "cover", "decided_by")
+    pending = []
+    for leave in scope.filter(status=Leave.Status.PENDING).order_by("start_date"):
+        others = scope.filter(
+            status=Leave.Status.APPROVED, start_date__lte=leave.end_date, end_date__gte=leave.start_date,
+        ).exclude(user=leave.user)
+        pending.append({"leave": leave, "tasks": list(leave.tasks_due()), "others": list(others)})
+    coming_up = []
+    for leave in scope.filter(status=Leave.Status.APPROVED, end_date__gte=today).order_by("start_date"):
+        tasks = list(leave.tasks_due())
+        if tasks:
+            coming_up.append({"leave": leave, "tasks": tasks})
+    return render(request, "tasks/leave_approvals.html", {
+        "pending": pending,
+        "coming_up": coming_up,
+        "decided": scope.exclude(status=Leave.Status.PENDING).order_by("-decided_at", "-created_at")[:15],
+        "people": list(people_managed_by(request.user)),
+        "pending_leave_count": len(pending),
+    })
+
+
+@manager_required
+@require_POST
+def leave_decide(request, pk, decision):
+    leave = get_object_or_404(Leave.objects.select_related("user", "user__manager"), pk=pk)
+    if not leave.can_decide(request.user):
+        raise PermissionDenied
+    if leave.status != Leave.Status.PENDING:
+        messages.info(request, "That request was already decided.")
+        return redirect("leave_approvals")
+    if decision not in ("approve", "decline"):
+        raise PermissionDenied
+    approved = decision == "approve"
+    leave.status = Leave.Status.APPROVED if approved else Leave.Status.DECLINED
+    leave.decided_by, leave.decided_at = request.user, timezone.now()
+    leave.decision_note = request.POST.get("note", "").strip()[:500]
+    leave.save()
+    word = "approved" if approved else "declined"
+    text = f"Your leave, {leave.start_date:%d %b} to {leave.end_date:%d %b}, was {word}"
+    if leave.decision_note:
+        text += f": {leave.decision_note}"
+    _tell_about_leave([leave.user], request.user, text)
+    notifications.leave_decided(leave)
+    messages.success(request, f"Leave {word} for {leave.user.display_name}.")
+    if approved:
+        count = leave.tasks_due().count()
+        if count:
+            messages.warning(request, f"{leave.user.display_name} has {count} task{'s' if count != 1 else ''} due during this leave. Reassign them below, or move their dates.")
+    return redirect("leave_approvals")
+
+
+@manager_required
+@require_POST
+def leave_reassign(request, pk):
+    """Give the tasks due during someone's leave to one other person."""
+    leave = get_object_or_404(Leave.objects.select_related("user", "user__manager"), pk=pk, status=Leave.Status.APPROVED)
+    if not leave.can_decide(request.user):
+        raise PermissionDenied
+    new_owner = people_managed_by(request.user).exclude(pk=leave.user_id).filter(pk=request.POST.get("to")).first()
+    if new_owner is None:
+        messages.error(request, "Pick who should take these tasks.")
+        return redirect("leave_approvals")
+    moved = 0
+    for task in leave.tasks_due().select_related("assignee", "assignee__manager"):
+        task.assignee = new_owner
+        try:
+            with transaction.atomic():
+                task.save()
+        except IntegrityError:
+            continue
+        task.collaborators.remove(new_owner)
+        _log(task, request.user, TaskActivity.Action.EDITED, f"Reassigned from {leave.user.display_name} to {new_owner.display_name}, who is covering their leave")
+        Notification.send(task, request.user, "assigned", recipients=[new_owner])
+        notifications.task_assigned(task, request.user)
+        moved += 1
+    messages.success(request, f"Moved {moved} task{'s' if moved != 1 else ''} to {new_owner.display_name}.")
+    return redirect("leave_approvals")
 
 
 # ---------------------------------------------------------------- tasks from team members

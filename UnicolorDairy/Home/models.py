@@ -103,11 +103,22 @@ def next_working_day(day):
 
 
 def on_leave_ids(day):
-    return set(Leave.objects.filter(start_date__lte=day, end_date__gte=day).values_list("user_id", flat=True))
+    """People on approved leave that day. A request has no effect until it's approved."""
+    return set(
+        Leave.objects.filter(status=Leave.Status.APPROVED, start_date__lte=day, end_date__gte=day)
+        .values_list("user_id", flat=True)
+    )
 
 
 def is_on_leave(user, day):
-    return Leave.objects.filter(user=user, start_date__lte=day, end_date__gte=day).exists()
+    return Leave.objects.filter(status=Leave.Status.APPROVED, user=user, start_date__lte=day, end_date__gte=day).exists()
+
+
+def leaves_managed_by(user):
+    """Leave this person can decide: everyone else's for admins, their own team's for team leads."""
+    if user.is_admin:
+        return Leave.objects.exclude(user=user)
+    return Leave.objects.filter(user__manager=user)
 
 
 class Client(models.Model):
@@ -138,12 +149,29 @@ class Holiday(models.Model):
 
 
 class Leave(models.Model):
-    """Dates a person is away."""
+    """Dates a person is away. Applied for by the person, or added directly by an admin."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Waiting for approval"
+        APPROVED = "approved", "Approved"
+        DECLINED = "declined", "Declined"
+        CANCELLED = "cancelled", "Cancelled"
+
+    class Kind(models.TextChoices):
+        CASUAL = "casual", "Casual leave"
+        SICK = "sick", "Sick leave"
+        OTHER = "other", "Other"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="leaves")
     start_date = models.DateField()
     end_date = models.DateField()
     note = models.CharField(max_length=200, blank=True)
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OTHER)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPROVED, db_index=True)
+    cover = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.CharField(max_length=500, blank=True)
     added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -152,6 +180,32 @@ class Leave(models.Model):
 
     def __str__(self):
         return f"{self.user} {self.start_date}–{self.end_date}"
+
+    @property
+    def days(self):
+        return (self.end_date - self.start_date).days + 1
+
+    @property
+    def can_cancel(self):
+        return self.status == self.Status.PENDING or (
+            self.status == self.Status.APPROVED and self.end_date >= timezone.localdate()
+        )
+
+    def approvers(self):
+        """Who can decide this: the person's team lead and all admins, never the person themselves."""
+        people = [p for p in active_admins() if p.pk != self.user_id]
+        lead = self.user.manager
+        if lead and lead.is_active and lead.pk != self.user_id and all(p.pk != lead.pk for p in people):
+            people.append(lead)
+        return people
+
+    def can_decide(self, user):
+        return user.pk != self.user_id and (user.is_admin or self.user.manager_id == user.pk)
+
+    def tasks_due(self):
+        return Task.objects.filter(
+            assignee=self.user, status__in=Task.NEEDS_WORK, due_date__range=(self.start_date, self.end_date),
+        ).select_related("client")
 
 
 class LoginAttempt(models.Model):
@@ -476,12 +530,13 @@ class Notification(models.Model):
         EXTENSION = "extension", "Extension"
         REQUEST = "request", "Task request"
         FILE = "file", "File added"
+        LEAVE = "leave", "Leave"
 
     ICONS = {
         "assigned": "📌", "started": "▶️", "submitted": "📤", "approved": "✅",
         "changes": "✏️", "reopened": "↩️", "deleted": "🗑️",
         "commented": "💬", "mentioned": "@", "reminder": "⏰", "overdue": "⚠️", "edited": "📝",
-        "restored": "♻️", "hold": "⏸️", "resumed": "▶️", "extension": "📅", "request": "🙋", "file": "📎",
+        "restored": "♻️", "hold": "⏸️", "resumed": "▶️", "extension": "📅", "request": "🙋", "file": "📎", "leave": "🌴",
     }
 
     # (message for the person the task belongs to, message for everyone else)

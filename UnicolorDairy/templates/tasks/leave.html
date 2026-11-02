@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "tasks/_leave_tabs.html" with active="mine" %}
+<div class="rep-charts">
+  <div class="panel">
+    <h2>Apply for leave</h2>
+    {% for e in form.non_field_errors %}<div class="err">{{ e }}</div>{% endfor %}
+    <form method="post" class="form-grid two-col" id="leaveForm" data-check-url="{% url 'leave_check' %}">
+      {% csrf_token %}
+      <label>From{{ form.start_date }}{% for e in form.start_date.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
+      <label>To{{ form.end_date }}{% for e in form.end_date.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
+      <label>Type of leave{{ form.kind }}</label>
+      <label>Who can cover? (optional){{ form.cover }}</label>
+      <label class="full">Reason{{ form.note }}{% for e in form.note.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
+      <div class="full leave-check" id="leaveCheck" aria-live="polite" hidden></div>
+      <div class="full"><button class="primary">Send request</button></div>
+    </form>
+    <p class="muted small">Your {% if user.manager %}team lead or an {% endif %}admin decides. Nothing changes until it's approved. Your reason is only shown to the people who approve leave.</p>
+  </div>
+  <div class="panel">
+    <h2>Office holidays</h2>
+    {% for h in holidays %}
+      <div class="rec-row"><div class="grow"><b>{{ h.name }}</b> <span class="muted small">{{ h.date|date:"D, j M Y" }}</span></div></div>
+    {% empty %}<p class="muted small">No upcoming holidays added yet.</p>{% endfor %}
+  </div>
+</div>
+<div class="panel">
+  <h2>My leave requests</h2>
+  {% for l in my_requests %}
+    <div class="leave-row">
+      <div class="grow">
+        <b>{{ l.start_date|date:"j M" }}{% if l.days > 1 %} – {{ l.end_date|date:"j M Y" }}{% else %} {{ l.start_date|date:"Y" }}{% endif %}</b>
+        <span class="muted small">{{ l.days }} day{{ l.days|pluralize }} · {{ l.get_kind_display }}{% if l.note %} · {{ l.note }}{% endif %}</span>
+        {% if l.decided_by and l.status != "pending" %}<div class="muted small">{{ l.get_status_display }} by {{ l.decided_by.display_name }}{% if l.decision_note %}: {{ l.decision_note }}{% endif %}</div>{% endif %}
+      </div>
+      <span class="leave-status {{ l.status }}">{{ l.get_status_display }}</span>
+      {% if l.can_cancel %}
+        <details class="inline">
+          <summary class="btn sm">Cancel</summary>
+          <form method="post" action="{% url 'leave_cancel' l.pk %}">{% csrf_token %}
+            <span class="small">Cancel this leave?</span>
+            <button class="sm danger">Yes, cancel it</button>
+          </form>
+        </details>
+      {% endif %}
+    </div>
+  {% empty %}<p class="muted small">You haven't applied for leave yet.</p>{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  // After dates are picked, show what falls during the leave.
+  const form = document.getElementById("leaveForm");
+  const box = document.getElementById("leaveCheck");
+  if (!form || !box) return;
+  const start = form.querySelector("[name=start_date]"), end = form.querySelector("[name=end_date]");
+  function line(text) { const d = document.createElement("div"); d.textContent = text; return d; }
+  async function check() {
+    if (end.value && start.value) end.min = start.value;
+    box.hidden = true;
+    if (!start.value || !end.value) return;
+    try {
+      const r = await fetch(form.dataset.checkUrl + "?start=" + start.value + "&end=" + end.value, { headers: { "X-Requested-With": "fetch" } });
+      if (!r.ok) return;
+      const data = await r.json();
+      box.innerHTML = "";
+      box.className = "full leave-check banner warning";
+      if (data.tasks.length) {
+        const h = document.createElement("b");
+        h.textContent = "Your tasks due during these dates:";
+        box.append(h);
+        data.tasks.forEach(t => box.append(line("· " + t.title + " (due " + t.due + ")")));
+      }
+      data.holidays.forEach(x => box.append(line("Office holiday: " + x.name + ", " + x.date)));
+      box.hidden = !(data.tasks.length || data.holidays.length);
+    } catch (e) { /* the check is only a help */ }
+  }
+  start.addEventListener("change", check);
+  end.addEventListener("change", check);
+  check();
+})();
+</script>
+{% endblock %}

@@ -32,6 +32,13 @@
   </div>
 {% endfor %}
 
+{% if pending_leave_count %}
+  <div class="banner warning row-between">
+    <span><b>{{ pending_leave_count }}</b> leave request{{ pending_leave_count|pluralize }} waiting for a decision.</span>
+    <a class="btn sm" href="{% url 'leave_approvals' %}">Review</a>
+  </div>
+{% endif %}
+
 {# ---------- requests for more time ---------- #}
 {% if pending_extensions %}
 <div class="panel queue">

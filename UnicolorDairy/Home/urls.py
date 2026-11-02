@@ -47,6 +47,12 @@ urlpatterns = [
     path("calendar/", views_more.calendar_page, name="calendar"),
     path("calendar/holiday/<int:pk>/delete/", views_more.holiday_delete, name="holiday_delete"),
     path("calendar/leave/<int:pk>/delete/", views_more.leave_delete, name="leave_delete"),
+    path("leave/", views_more.my_leave, name="my_leave"),
+    path("leave/check/", views_more.leave_check, name="leave_check"),
+    path("leave/approvals/", views_more.leave_approvals, name="leave_approvals"),
+    path("leave/<int:pk>/cancel/", views_more.leave_cancel, name="leave_cancel"),
+    path("leave/<int:pk>/reassign/", views_more.leave_reassign, name="leave_reassign"),
+    path("leave/<int:pk>/<str:decision>/", views_more.leave_decide, name="leave_decide"),
     path("my-tasks/add/", views_more.member_task_add, name="member_task_add"),
     path("requests/<int:pk>/<str:decision>/", views_more.request_decide, name="request_decide"),
 

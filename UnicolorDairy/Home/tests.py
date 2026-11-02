@@ -17,7 +17,7 @@ from django.utils import timezone
 from . import recurring, reminders, reports, security
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, LoginAttempt, Notification, RecurringTask, Subtask, Task,
-    TaskComment, TaskRequest, User, next_working_day,
+    TaskComment, TaskRequest, User, next_working_day, on_leave_ids,
 )
 
 
@@ -573,7 +573,7 @@ class CorporateTests(TestCase):
         Leave.objects.create(user=self.yashi, start_date=self.today, end_date=self.today)
         for user in (self.owner, self.admin, self.lead, self.yashi, self.niyati):
             self.client.force_login(user)
-            for name in ["home", "dashboard", "my_tasks", "report", "team", "clients", "calendar", "archive", "recurring", "security", "notification_list"]:
+            for name in ["home", "dashboard", "my_tasks", "report", "team", "clients", "calendar", "archive", "recurring", "security", "notification_list", "my_leave", "leave_approvals"]:
                 resp = self.client.get(reverse(name), follow=True)
                 self.assertEqual(resp.status_code, 200, (user.username, name))
             for t in tasks:
@@ -582,6 +582,124 @@ class CorporateTests(TestCase):
         self.assertEqual(self.client.get(reverse("handover", args=[self.yashi.pk])).status_code, 200)
         self.assertEqual(self.client.get(reverse("task_edit", args=[tasks[0].pk])).status_code, 200)
         self.assertEqual(self.client.get(reverse("dashboard"), {"member": "abc", "client": "x"}).status_code, 200)
+
+    # ---- applying for leave
+
+    def apply(self, user, days=(1, 2), **extra):
+        return self.post(user, "my_leave", data={
+            "kind": "casual", "start_date": (self.today + timedelta(days=days[0])).isoformat(),
+            "end_date": (self.today + timedelta(days=days[1])).isoformat(), "note": "Family function", **extra,
+        })
+
+    def test_team_member_can_see_page_and_apply(self):
+        Holiday.objects.create(date=self.today + timedelta(days=5), name="Bhai Dooj")
+        self.client.force_login(self.yashi)
+        resp = self.client.get(reverse("my_leave"))
+        self.assertContains(resp, "Apply for leave")
+        self.assertContains(resp, "Bhai Dooj")
+        self.assertContains(self.client.get(reverse("my_tasks")), reverse("my_leave"))
+        self.apply(self.yashi, cover=self.niyati.pk)
+        leave = Leave.objects.get()
+        self.assertEqual((leave.user, leave.status, leave.cover), (self.yashi, "pending", self.niyati))
+        self.assertTrue(Notification.objects.filter(recipient=self.lead, verb="leave").exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.admin, verb="leave").exists())
+        self.assertTrue(any("Leave request" in m.subject for m in mail.outbox))
+
+    def test_pending_leave_changes_nothing_until_approved(self):
+        self.post(self.yashi, "my_leave", data={"kind": "casual", "start_date": self.today.isoformat(), "end_date": self.today.isoformat(), "note": "x"})
+        leave = Leave.objects.get()
+        self.assertNotIn(self.yashi.pk, on_leave_ids(self.today))
+        self.post(self.lead, "leave_decide", leave.pk, "approve", data={"note": "Enjoy"})
+        leave.refresh_from_db()
+        self.assertEqual((leave.status, leave.decided_by), ("approved", self.lead))
+        self.assertIn(self.yashi.pk, on_leave_ids(self.today))
+        self.assertTrue(Notification.objects.filter(recipient=self.yashi, verb="leave", message__contains="approved").exists())
+        self.assertTrue(any("approved" in m.subject for m in mail.outbox))
+
+    def test_decline_keeps_them_working(self):
+        self.apply(self.yashi, days=(0, 0))
+        self.post(self.admin, "leave_decide", Leave.objects.get().pk, "decline", data={"note": "Busy week"})
+        self.assertEqual(Leave.objects.get().status, "declined")
+        self.assertNotIn(self.yashi.pk, on_leave_ids(self.today))
+
+    def test_who_can_decide_leave(self):
+        self.apply(self.yashi)
+        leave = Leave.objects.get()
+        self.assertEqual(self.post(self.yashi, "leave_decide", leave.pk, "approve").status_code, 302)  # sent away
+        other_lead = User.objects.create_user("lead2", "l2@example.com", "pass12345!", role=User.Role.MANAGER)
+        self.assertEqual(self.post(other_lead, "leave_decide", leave.pk, "approve").status_code, 403)
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, "pending")
+        self.apply(self.admin)
+        own = Leave.objects.get(user=self.admin)
+        self.assertEqual(self.post(self.admin, "leave_decide", own.pk, "approve").status_code, 403)
+        self.post(self.admin2, "leave_decide", own.pk, "approve")
+        own.refresh_from_db()
+        self.assertEqual(own.status, "approved")
+
+    def test_reason_is_private_to_approvers(self):
+        self.apply(self.yashi)
+        self.client.force_login(self.niyati)
+        self.assertNotContains(self.client.get(reverse("my_leave")), "Family function")
+        self.assertRedirects(self.client.get(reverse("leave_approvals")), reverse("my_tasks"))
+        self.client.force_login(self.lead)
+        self.assertContains(self.client.get(reverse("leave_approvals")), "Family function")
+        lead2 = User.objects.create_user("lead2", "l2@example.com", "pass12345!", role=User.Role.MANAGER)
+        self.client.force_login(lead2)
+        self.assertNotContains(self.client.get(reverse("leave_approvals")), "Family function")
+
+    def test_cannot_cancel_someone_elses_leave(self):
+        self.apply(self.yashi)
+        self.assertEqual(self.post(self.niyati, "leave_cancel", Leave.objects.get().pk).status_code, 404)
+
+    def test_cancel_pending_quietly_and_approved_with_notice(self):
+        self.apply(self.yashi)
+        leave = Leave.objects.get()
+        Notification.objects.all().delete()
+        self.post(self.yashi, "leave_cancel", leave.pk)
+        leave.refresh_from_db()
+        self.assertEqual(leave.status, "cancelled")
+        self.assertFalse(Notification.objects.exists())
+        self.apply(self.yashi)  # the cancelled dates are free again
+        leave = Leave.objects.exclude(status="cancelled").get()
+        self.post(self.lead, "leave_decide", leave.pk, "approve")
+        Notification.objects.all().delete()
+        self.post(self.yashi, "leave_cancel", leave.pk)
+        self.assertTrue(Notification.objects.filter(recipient=self.lead, message__contains="cancelled").exists())
+
+    def test_overlap_and_bad_dates_are_refused(self):
+        self.apply(self.yashi, days=(1, 3))
+        self.apply(self.yashi, days=(3, 5))
+        self.assertEqual(Leave.objects.count(), 1)
+        self.apply(self.yashi, days=(9, 8))
+        self.apply(self.yashi, days=(-40, -39))
+        self.assertEqual(Leave.objects.count(), 1)
+
+    def test_approver_sees_affected_tasks_and_can_reassign(self):
+        due = self.today + timedelta(days=1)
+        t = self.task(due_date=due, title="Due in leave")
+        self.client.force_login(self.yashi)
+        check = self.client.get(reverse("leave_check"), {"start": due.isoformat(), "end": due.isoformat()}).json()
+        self.assertEqual(check["tasks"][0]["title"], "Due in leave")
+        self.apply(self.yashi)
+        leave = Leave.objects.get()
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("leave_approvals")), "Due in leave")
+        self.post(self.admin, "leave_decide", leave.pk, "approve")
+        self.post(self.admin, "leave_reassign", leave.pk, data={"to": self.niyati.pk})
+        t.refresh_from_db()
+        self.assertEqual(t.assignee, self.niyati)
+
+    def test_sole_admin_is_not_stuck(self):
+        User.objects.exclude(pk=self.owner.pk).update(is_active=False)
+        self.apply(self.owner)
+        self.assertEqual(Leave.objects.get().status, "approved")
+
+    def test_leave_notification_links_to_the_right_page(self):
+        self.apply(self.yashi)
+        n = Notification.objects.filter(recipient=self.lead).first()
+        self.client.force_login(self.lead)
+        self.assertRedirects(self.client.get(reverse("notification_open", args=[n.pk])), reverse("leave_approvals"))
 
     def test_health_check_is_public(self):
         self.assertEqual(self.client.get(reverse("healthz")).status_code, 200)

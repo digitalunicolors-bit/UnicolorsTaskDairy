@@ -3207,3 +3207,19 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 label.check input { width: auto; flex: none; margin: 0; }
 .radio-row label.check input, .assign-options label.check input { width: 16px; height: 16px; }
 button[hidden] { display: none; }
+
+.leave-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.leave-status { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.leave-status.pending { color: var(--c-review); background: color-mix(in srgb, var(--c-review) 14%, transparent); }
+.leave-status.approved { color: var(--c-done); background: color-mix(in srgb, var(--c-done) 14%, transparent); }
+.leave-status.declined { color: var(--hi); background: color-mix(in srgb, var(--hi) 12%, transparent); }
+.leave-status.cancelled { color: var(--muted); background: var(--surface2); }
+.leave-check { margin-top: 2px; }
+.leave-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.leave-row .grow { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.leave-row form { margin: 0; }
+.leave-card { border-top: 1px solid var(--line); padding: 14px 0; }
+.leave-card ul { margin: 6px 0; padding-left: 18px; }
+.leave-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.leave-actions input[type=text] { flex: 1 1 200px; min-width: 0; }
+.leave-actions select { width: auto; max-width: 100%; }

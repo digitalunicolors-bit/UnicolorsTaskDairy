@@ -35,6 +35,7 @@ STYLES = {
     "mentioned": ("#2f6fde", "#eef3fd", "💬", "You were tagged"),
     "extension": ("#b7791f", "#fdf6e9", "📅", "Deadline"),
     "request": ("#2f6fde", "#eef3fd", "🙋", "Task request"),
+    "leave": ("#2a9d5c", "#ebf7f0", "🌴", "Leave"),
 }
 PRIORITY_COLORS = {"high": "#d93d42", "medium": "#b7791f", "low": "#2a9d5c"}
 
@@ -298,6 +299,57 @@ def task_request_received(req, people):
         intro=f"{who} asked for this task to be added.",
         notes=[{"label": "Details", "text": req.details, "color": "#2f6fde"}],
         button={"label": "Review request", "url": _url("dashboard")},
+    )
+    _send(ctx, [p.email for p in people])
+
+
+def _leave_rows(leave):
+    return [
+        {"label": "Person", "value": leave.user.display_name, "bold": True},
+        {"label": "Type", "value": leave.get_kind_display()},
+        {"label": "From", "value": f"{leave.start_date:%a, %d %b %Y}"},
+        {"label": "To", "value": f"{leave.end_date:%a, %d %b %Y}"},
+    ]
+
+
+def leave_requested(leave, people):
+    ctx = _context(
+        "leave",
+        subject=f"Leave request: {leave.user.display_name}, {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+        heading="New leave request",
+        greeting_name="team",
+        intro=f"{leave.user.display_name} applied for leave and needs a decision.",
+        rows=_leave_rows(leave),
+        notes=[{"label": "Reason", "text": leave.note, "color": "#2a9d5c"}],
+        button={"label": "Review request", "url": _url("leave_approvals")},
+    )
+    _send(ctx, [p.email for p in people])
+
+
+def leave_decided(leave):
+    approved = leave.status == leave.Status.APPROVED
+    ctx = _context(
+        "leave",
+        subject=f"Your leave was {'approved' if approved else 'declined'}: {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+        heading=f"Leave {'approved' if approved else 'declined'}",
+        greeting_name=leave.user.first_name or leave.user.display_name,
+        intro=f"{leave.decided_by.display_name if leave.decided_by else 'Your manager'} {'approved' if approved else 'declined'} your leave request.",
+        rows=_leave_rows(leave),
+        notes=[{"label": "Note", "text": leave.decision_note, "color": "#2a9d5c"}],
+        button={"label": "View my leave", "url": _url("my_leave")},
+    )
+    _send(ctx, [leave.user.email])
+
+
+def leave_cancelled(leave, people):
+    ctx = _context(
+        "leave",
+        subject=f"Leave cancelled: {leave.user.display_name}, {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+        heading="Leave cancelled",
+        greeting_name="team",
+        intro=f"{leave.user.display_name} cancelled this leave, so they're working on these dates after all.",
+        rows=_leave_rows(leave),
+        button={"label": "Open leave page", "url": _url("leave_approvals")},
     )
     _send(ctx, [p.email for p in people])
 

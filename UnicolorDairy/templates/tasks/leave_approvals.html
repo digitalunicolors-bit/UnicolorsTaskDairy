@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "tasks/_leave_tabs.html" with active="approvals" %}
+<div class="panel">
+  <h2>Waiting for a decision <small>{{ pending|length }}</small></h2>
+  {% for row in pending %}{% with l=row.leave %}
+    <div class="leave-card">
+      <div class="row-between">
+        <div><b>{{ l.user.display_name }}</b> <span class="muted small">{{ l.get_kind_display }}</span></div>
+        <b>{{ l.start_date|date:"D, j M" }}{% if l.days > 1 %} – {{ l.end_date|date:"D, j M Y" }}{% endif %} <span class="muted small">{{ l.days }} day{{ l.days|pluralize }}</span></b>
+      </div>
+      <div class="small">Reason: {{ l.note|default:"—" }}</div>
+      {% if l.cover %}<div class="small">Suggested cover: {{ l.cover.display_name }}</div>{% endif %}
+      {% if row.tasks %}
+        <div class="small"><b>{{ row.tasks|length }} task{{ row.tasks|length|pluralize }} due during this leave:</b></div>
+        <ul class="small">{% for t in row.tasks %}<li>{{ t.title }} · due {{ t.due_date|date:"j M" }}{% if t.client %} · {{ t.client.name }}{% endif %}</li>{% endfor %}</ul>
+      {% else %}<div class="small muted">No tasks due during this leave.</div>{% endif %}
+      {% if row.others %}<div class="small"><b>Also away then:</b> {% for o in row.others %}{{ o.user.display_name }} ({{ o.start_date|date:"j M" }}–{{ o.end_date|date:"j M" }}){% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+      <form method="post" class="leave-actions" action="{% url 'leave_decide' l.pk 'approve' %}">{% csrf_token %}
+        <input type="text" name="note" maxlength="500" placeholder="Note (optional)" aria-label="Note">
+        <button class="sm ok">Approve</button>
+        <button class="sm" formaction="{% url 'leave_decide' l.pk 'decline' %}">Decline</button>
+      </form>
+    </div>
+  {% endwith %}{% empty %}<p class="muted small">Nothing waiting.</p>{% endfor %}
+</div>
+
+{% if coming_up %}
+<div class="panel">
+  <h2>Tasks due during approved leave <small>reassign them, or open a task to move its date</small></h2>
+  {% for row in coming_up %}{% with l=row.leave %}
+    <div class="leave-card">
+      <b>{{ l.user.display_name }}</b> <span class="muted small">{{ l.start_date|date:"j M" }} – {{ l.end_date|date:"j M Y" }}{% if l.cover %} · suggested cover: {{ l.cover.display_name }}{% endif %}</span>
+      <ul class="small">{% for t in row.tasks %}<li><a class="link" href="{% url 'dashboard' %}?show=open&member={{ l.user_id }}#task-{{ t.pk }}">{{ t.title }}</a> · due {{ t.due_date|date:"j M" }}</li>{% endfor %}</ul>
+      <form method="post" class="leave-actions" action="{% url 'leave_reassign' l.pk %}">{% csrf_token %}
+        <select name="to" required aria-label="Give these tasks to">
+          <option value="">Give all to…</option>
+          {% for p in people %}{% if p.pk != l.user_id %}<option value="{{ p.pk }}" {% if l.cover_id == p.pk %}selected{% endif %}>{{ p.display_name }}</option>{% endif %}{% endfor %}
+        </select>
+        <button class="sm">Reassign</button>
+      </form>
+    </div>
+  {% endwith %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Recent decisions</h2>
+  {% for l in decided %}
+    <div class="leave-row">
+      <div class="grow"><b>{{ l.user.display_name }}</b> <span class="muted small">{{ l.start_date|date:"j M" }} – {{ l.end_date|date:"j M Y" }} · {{ l.get_kind_display }}{% if l.decided_by %} · {{ l.decided_by.display_name }}{% endif %}{% if l.decision_note %} · {{ l.decision_note }}{% endif %}</span></div>
+      <span class="leave-status {{ l.status }}">{{ l.get_status_display }}</span>
+    </div>
+  {% empty %}<p class="muted small">No decisions yet.</p>{% endfor %}
+</div>
+{% endblock %}
