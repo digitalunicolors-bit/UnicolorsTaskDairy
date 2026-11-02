@@ -23,6 +23,7 @@ from django.contrib.auth.tokens import default_token_generator
 from . import notifications, recurring, reports
 from .forms import (
     AssignTaskForm,
+    OwnTaskForm,
     SetPasswordForm,
     UserCreateForm,
     UserEditForm,
@@ -763,6 +764,7 @@ def my_tasks(request):
         "greeting": greeting,
         "today": today,
         "is_tagged_view": show == "tagged",
+        "own_task_form": OwnTaskForm(),
     })
 
 

@@ -3220,3 +3220,4 @@ button[hidden] { display: none; }
 .leave-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 .leave-actions input[type=text] { flex: 1 1 200px; min-width: 0; }
 .leave-actions select { width: auto; max-width: 100%; }
+.own-task { margin-bottom: 14px; }

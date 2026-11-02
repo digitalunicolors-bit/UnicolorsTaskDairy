@@ -22,6 +22,7 @@
     <span class="pill p-{{ t.priority }}">{{ t.get_priority_display }}</span>
     <span class="pill {% if t.is_late %}late{% endif %}">{% if t.is_late %}Overdue · {% else %}Due {% endif %}{{ t.due_date|date:"j M" }}</span>
     {% if show_member %}<span class="pill who">{{ t.assignee.display_name }}{% with n=t.collaborators.all|length %}{% if n %} +{{ n }}{% endif %}{% endwith %}</span>{% endif %}
+    {% if show_member and t.assigned_by_id == t.assignee_id %}<span class="pill" title="Added by the person doing it">Self-added</span>{% endif %}
     {% if t.estimated_hours %}<span class="pill" title="Estimated time">⏱ {{ t.estimated_hours|floatformat:"-1" }}h</span>{% endif %}
     {% with p=t.subtask_progress %}{% if p %}<span class="pill" title="Checklist">☑ {{ p.done }}/{{ p.total }}</span>{% endif %}{% endwith %}
     {% if t.comment_count %}<span class="pill" title="Comments">💬 {{ t.comment_count }}</span>{% endif %}

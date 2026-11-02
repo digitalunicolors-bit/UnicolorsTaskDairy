@@ -14,10 +14,10 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import notifications, reports
-from .forms import ClientForm, HolidayForm, LeaveForm, LeaveRequestForm, MultipleFileField, _check_size
+from .forms import ClientForm, HolidayForm, LeaveForm, LeaveRequestForm, MultipleFileField, OwnTaskForm, _check_size
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, Notification, Subtask, Task, TaskActivity,
-    TaskAttachment, TaskRequest, User, leaves_managed_by, people_managed_by,
+    TaskAttachment, TaskRequest, User, is_office_closed, leaves_managed_by, on_leave_ids, people_managed_by,
 )
 from .views import S, _log, _safe_next, _parse_date, admin_required, manager_required, needs_handover
 
@@ -486,6 +486,38 @@ def leave_reassign(request, pk):
         moved += 1
     messages.success(request, f"Moved {moved} task{'s' if moved != 1 else ''} to {new_owner.display_name}.")
     return redirect("leave_approvals")
+
+
+# ---------------------------------------------------------------- tasks people add for themselves
+
+
+@login_required
+@require_POST
+def own_task_add(request):
+    form = OwnTaskForm(request.POST)
+    if not form.is_valid():
+        for errors in form.errors.values():
+            for e in errors:
+                messages.error(request, e)
+        return redirect("my_tasks")
+    data = form.cleaned_data
+    user = request.user
+    task = Task.objects.create(
+        title=data["title"], details=data["details"], priority=data["priority"], due_date=data["due_date"],
+        assignee=user, assigned_by=user, client=data["client"], estimated_hours=data["estimated_hours"],
+    )
+    _log(task, user, TaskActivity.Action.ASSIGNED, "Added by the person doing it")
+    Notification.objects.bulk_create([
+        Notification(recipient=p, actor=user, task=task, verb=Notification.Verb.ASSIGNED,
+                     message=f"{user.display_name} added their own task “{task.title}”"[:300])
+        for p in task.overseers() if p.pk != user.pk
+    ])
+    messages.success(request, f'Added "{task.title}" to your tasks. It goes for approval when you mark it complete.')
+    if is_office_closed(task.due_date):
+        messages.warning(request, f"{task.due_date:%a, %d %b} is a day the office is closed. Check the due date.")
+    if task.assignee_id in on_leave_ids(task.due_date):
+        messages.warning(request, "You're on leave on that date. Check the due date.")
+    return redirect("my_tasks")
 
 
 # ---------------------------------------------------------------- task requests already sent

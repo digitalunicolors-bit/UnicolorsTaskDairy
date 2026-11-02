@@ -441,10 +441,29 @@ class CorporateTests(TestCase):
         rows = self.client.get(reverse("dashboard")).context["workload"]
         self.assertEqual(next(w for w in rows if w["user"] == self.yashi)["hours"], Decimal("6.5"))
 
-    def test_add_a_task_form_is_gone_for_team_members(self):
+    def test_team_member_can_create_their_own_task(self):
         self.client.force_login(self.yashi)
-        self.assertNotContains(self.client.get(reverse("my_tasks")), "Add a task or ask for one")
-        self.assertEqual(self.client.post("/my-tasks/add/", {"kind": "self", "title": "x"}).status_code, 404)
+        self.assertContains(self.client.get(reverse("my_tasks")), "Add my own task")
+        self.assertNotContains(self.client.get(reverse("my_tasks")), "Ask for this to be assigned")
+        self.post(self.yashi, "own_task_add", data={"title": "Mine", "priority": "low", "due_date": self.today.isoformat()})
+        t = Task.objects.get()
+        self.assertEqual((t.assignee, t.assigned_by, t.status), (self.yashi, self.yashi, "todo"))
+        self.assertTrue(t.activity.filter(note__contains="Added by the person").exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.lead, task=t, message__contains="their own task").exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.admin, task=t).exists())
+        self.assertContains(self.client.get(reverse("my_tasks")), "Mine")
+        # They still can't approve it themselves.
+        self.act(self.yashi, t, "submit")
+        self.assertEqual(self.act(self.yashi, t, "approve").status_code, 403)
+        self.act(self.lead, t, "approve")
+        t.refresh_from_db()
+        self.assertEqual(t.status, "done")
+
+    def test_own_task_cannot_be_backdated_or_given_to_someone_else(self):
+        self.post(self.yashi, "own_task_add", data={"title": "Old", "priority": "low", "due_date": (self.today - timedelta(days=1)).isoformat()})
+        self.assertFalse(Task.objects.exists())
+        self.post(self.yashi, "own_task_add", data={"title": "Theirs", "priority": "low", "due_date": self.today.isoformat(), "assignee": self.niyati.pk})
+        self.assertEqual(Task.objects.get().assignee, self.yashi)
 
     def test_requests_already_sent_can_still_be_decided(self):
         req = TaskRequest.objects.create(title="Please", requested_by=self.yashi)

@@ -297,6 +297,29 @@ class TaskEditForm(forms.ModelForm):
         self.fields["assignee"].empty_label = None
 
 
+class OwnTaskForm(forms.Form):
+    """A team member adding a task for themselves."""
+
+    title = forms.CharField(max_length=200, label="Task", widget=forms.TextInput(attrs={"placeholder": "What needs doing?"}))
+    client = _client_field()
+    priority = forms.ChoiceField(choices=Task.Priority.choices, initial=Task.Priority.MEDIUM)
+    due_date = forms.DateField(label="Due date", widget=forms.DateInput(attrs={"type": "date"}))
+    estimated_hours = _hours_field()
+    details = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2, "placeholder": "Details (optional)"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["due_date"].widget.attrs["min"] = timezone.localdate().isoformat()
+        if not self.is_bound:
+            self.initial.setdefault("due_date", timezone.localdate())
+
+    def clean_due_date(self):
+        due = self.cleaned_data["due_date"]
+        if due < timezone.localdate():
+            raise forms.ValidationError("The due date can't be in the past.")
+        return due
+
+
 class ClientForm(forms.ModelForm):
     class Meta:
         model = Client

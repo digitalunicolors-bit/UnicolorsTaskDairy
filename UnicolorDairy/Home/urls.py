@@ -47,6 +47,7 @@ urlpatterns = [
     path("calendar/", views_more.calendar_page, name="calendar"),
     path("calendar/holiday/<int:pk>/delete/", views_more.holiday_delete, name="holiday_delete"),
     path("calendar/leave/<int:pk>/delete/", views_more.leave_delete, name="leave_delete"),
+    path("my-tasks/add/", views_more.own_task_add, name="own_task_add"),
     path("leave/", views_more.my_leave, name="my_leave"),
     path("leave/check/", views_more.leave_check, name="leave_check"),
     path("leave/approvals/", views_more.leave_approvals, name="leave_approvals"),

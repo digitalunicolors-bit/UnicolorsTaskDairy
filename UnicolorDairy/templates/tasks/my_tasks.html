@@ -53,6 +53,21 @@
   <a class="link small" href="{% url 'report' %}">My full report →</a>
 </div>
 
+{# ---------- add my own task ---------- #}
+<details class="panel own-task">
+  <summary class="assign-summary"><h2>➕ Add my own task</h2><span class="assign-chevron" aria-hidden="true">▾</span></summary>
+  <form method="post" action="{% url 'own_task_add' %}" class="form-grid">
+    {% csrf_token %}
+    <label class="t">Task{{ own_task_form.title }}</label>
+    <label>Priority{{ own_task_form.priority }}</label>
+    <label>Due date{{ own_task_form.due_date }}</label>
+    <label>Client / project{{ own_task_form.client }}</label>
+    <label>Estimated hours (optional){{ own_task_form.estimated_hours }}</label>
+    <label class="full">Details{{ own_task_form.details }}</label>
+    <div class="full"><button class="primary" type="submit">Add task</button></div>
+  </form>
+</details>
+
 {# ---------- filters + view switch ---------- #}
 <div class="controls my-controls">
   <form method="get">
