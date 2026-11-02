@@ -214,3 +214,8 @@ input[type=file]::file-selector-button { background: var(--surface2); color: var
 .assign-summary h2 { font-size: 19px; font-weight: 650; }
 .auth .auth-form > h2, .auth .auth-form > p { margin-left: auto !important; margin-right: auto !important; width: 100%; max-width: 400px; }
 .notif-tab.on span, .notif-tabs .on span, .notif-filter.on span { background: transparent; color: var(--brand-ink); }
+
+/* Login: a softer yellow, easier on the eyes across half a screen. */
+.auth-card { --brand: #FFE78F; }
+.auth-brand { background: #FFE78F; }
+.auth .primary, .auth .primary:hover { background: #FFE78F !important; border-color: #FFE78F !important; }
