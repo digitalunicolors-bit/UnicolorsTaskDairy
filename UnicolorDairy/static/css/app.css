@@ -3187,14 +3187,6 @@ table.sortable th.desc::after {
 .assign-options { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; font-weight: 400; }
 .assign-options select { width: auto; max-width: 100%; }
 .banner.warning { background: color-mix(in srgb, var(--c-review) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c-review) 40%, transparent); color: var(--ink); padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; }
-.ok-text { color: var(--c-done); }
-.setup-steps { padding-left: 20px; }
-.setup-steps li { margin-bottom: 16px; }
-.qr-box { width: 220px; max-width: 100%; margin: 10px 0; background: #fff; border-radius: 8px; }
-.qr-box svg { display: block; width: 100%; height: auto; }
-.setup-key { font-size: 13px; overflow-wrap: anywhere; }
-.setup-confirm { margin-top: 8px; }
-.setup-confirm input { max-width: 140px; }
 .handover-form { margin-top: 14px; }
 .nowrap { white-space: nowrap; }
 

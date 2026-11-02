@@ -7,7 +7,6 @@ from Home import security
 
 urlpatterns = [
     path("login/", security.ProtectedLoginView.as_view(), name="login"),
-    path("login/verify/", security.login_verify, name="login_verify"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path(
         "password/",

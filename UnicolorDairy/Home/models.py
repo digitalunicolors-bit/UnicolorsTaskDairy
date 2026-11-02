@@ -25,9 +25,6 @@ class User(AbstractUser):
         verbose_name="Reports to", help_text="The team lead who assigns and approves this person's work",
     )
     must_change_password = models.BooleanField(default=False)
-    totp_secret = models.CharField(max_length=64, blank=True, default="")
-    totp_enabled = models.BooleanField(default=False)
-    totp_last_step = models.BigIntegerField(default=0)
 
     class Meta:
         ordering = ["first_name", "last_name", "username"]

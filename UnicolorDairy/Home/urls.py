@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import security, views, views_more
+from . import views, views_more
 
 urlpatterns = [
     path("", views.home, name="home"),
@@ -27,8 +27,6 @@ urlpatterns = [
     path("team/resend-invites/", views.resend_all_invites, name="resend_all_invites"),
 
     path("healthz/", views_more.healthz, name="healthz"),
-    path("security/", security.security_settings, name="security"),
-    path("team/<int:pk>/reset-two-step/", security.reset_two_step, name="reset_two_step"),
     path("team/<int:pk>/handover/", views_more.handover, name="handover"),
     path("team/email-problems/clear/", views_more.email_failures_clear, name="email_failures_clear"),
 

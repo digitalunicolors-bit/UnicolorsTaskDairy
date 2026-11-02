@@ -1,7 +1,5 @@
-import base64
 import os
 import tempfile
-import time
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest import mock
@@ -14,7 +12,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from . import indian_holidays, recurring, reminders, reports, security
+from . import indian_holidays, recurring, reminders, reports
 from .models import (
     Client, EmailFailure, ExtensionRequest, Holiday, Leave, LoginAttempt, Notification, RecurringTask, Subtask, Task,
     TaskComment, TaskRequest, User, is_office_closed, next_working_day, on_leave_ids,
@@ -114,7 +112,7 @@ class FlowTests(TestCase):
 
     def test_pages_render(self):
         self.assign(self.yashi)
-        for user, names in [(self.admin, ["dashboard", "my_tasks", "report", "team", "user_add", "clients", "calendar", "archive", "recurring", "security", "search"]), (self.yashi, ["my_tasks", "report", "security", "search"])]:
+        for user, names in [(self.admin, ["dashboard", "my_tasks", "report", "team", "user_add", "clients", "calendar", "archive", "recurring", "search"]), (self.yashi, ["my_tasks", "report", "search"])]:
             self.login(user)
             for name in names:
                 self.assertEqual(self.client.get(reverse(name)).status_code, 200, name)
@@ -486,34 +484,12 @@ class CorporateTests(TestCase):
         LoginAttempt.objects.all().delete()
         self.assertEqual(self.login_form("pass12345!").status_code, 302)
 
-    def test_two_step_login(self):
-        secret = security.new_secret()
-        User.objects.filter(pk=self.yashi.pk).update(totp_secret=secret, totp_enabled=True)
-        resp = self.login_form("pass12345!")
-        self.assertRedirects(resp, reverse("login_verify"))
-        self.assertNotIn("_auth_user_id", self.client.session)
-        self.assertEqual(self.client.get(reverse("my_tasks")).status_code, 302)
-        self.client.post(reverse("login_verify"), {"code": "000000"})
-        self.assertNotIn("_auth_user_id", self.client.session)
-        code = security._code_for_step(secret, int(time.time() // 30))
-        self.client.post(reverse("login_verify"), {"code": code})
+    def test_two_step_login_is_gone(self):
+        self.assertEqual(self.login_form("pass12345!").status_code, 302)
         self.assertIn("_auth_user_id", self.client.session)
-        # The same code can't be used twice.
-        self.yashi.refresh_from_db()
-        self.assertFalse(security.check_code(self.yashi, code))
-
-    def test_totp_matches_the_published_test_vector(self):
-        secret = base64.b32encode(b"12345678901234567890").decode()
-        self.assertEqual(security._code_for_step(secret, 59 // 30), "287082")
-
-    def test_two_step_setup(self):
-        self.client.force_login(self.yashi)
-        self.client.post(reverse("security"), {"action": "start"})
-        secret = self.client.session["2fa_setup"]
-        self.assertContains(self.client.get(reverse("security")), secret)
-        self.client.post(reverse("security"), {"action": "confirm", "code": security._code_for_step(secret, int(time.time() // 30))})
-        self.yashi.refresh_from_db()
-        self.assertTrue(self.yashi.totp_enabled)
+        self.assertEqual(self.client.get("/security/").status_code, 404)
+        self.assertEqual(self.client.get("/login/verify/").status_code, 404)
+        self.assertNotContains(self.client.get(reverse("my_tasks")), "Two-step")
 
     def test_admin_set_password_must_be_changed(self):
         self.post(self.admin, "user_password", self.yashi.pk, data={"password": "Temp-pass-9931"})
@@ -587,7 +563,7 @@ class CorporateTests(TestCase):
         Leave.objects.create(user=self.yashi, start_date=self.today, end_date=self.today)
         for user in (self.owner, self.admin, self.lead, self.yashi, self.niyati):
             self.client.force_login(user)
-            for name in ["home", "dashboard", "my_tasks", "report", "team", "clients", "calendar", "archive", "recurring", "security", "notification_list", "my_leave", "leave_approvals"]:
+            for name in ["home", "dashboard", "my_tasks", "report", "team", "clients", "calendar", "archive", "recurring", "notification_list", "my_leave", "leave_approvals"]:
                 resp = self.client.get(reverse(name), follow=True)
                 self.assertEqual(resp.status_code, 200, (user.username, name))
             for t in tasks:

@@ -7,7 +7,7 @@ A normal deploy only creates the owner if it is missing. It never touches an exi
 owner's password, so a password changed inside the app stays changed.
 
 Locked out? Set DJANGO_SUPERUSER_FORCE_RESET=1 on the host and redeploy: that sets the
-password from the environment and turns off two-step login. Then remove the setting.
+password from the environment. Then remove the setting.
 """
 import os
 
@@ -40,8 +40,6 @@ class Command(BaseCommand):
         if created or force_reset:
             user.set_password(password)
         if force_reset:
-            user.totp_enabled = False
-            user.totp_secret = ""
             user.must_change_password = True
         user.save()
         self.stdout.write(self.style.SUCCESS(
