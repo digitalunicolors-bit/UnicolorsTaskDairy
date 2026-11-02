@@ -92,7 +92,7 @@ h1 {
 }
 
 h1 span:first-child {
-    color: var(--brand)
+    color: var(--accent-text)
 }
 
 .sub {

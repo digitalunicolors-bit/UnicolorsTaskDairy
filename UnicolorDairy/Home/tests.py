@@ -946,5 +946,10 @@ class CorporateTests(TestCase):
         self.assertNotIn(reverse("task_action", args=[t.pk, "start"]), html)
         self.assertContains(self.client.get(reverse("task_detail", args=[t.pk])), reverse("task_action", args=[t.pk, "start"]))
 
+    def test_theme_switch_is_on_login_and_app_pages(self):
+        self.assertContains(self.client.get(reverse("login")), "data-theme-toggle")
+        self.client.force_login(self.yashi)
+        self.assertContains(self.client.get(reverse("my_tasks")), "data-theme-toggle")
+
     def test_health_check_is_public(self):
         self.assertEqual(self.client.get(reverse("healthz")).status_code, 200)

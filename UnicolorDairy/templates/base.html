@@ -6,6 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Unicolors Workspace{% endblock %}</title>
   <meta name="theme-color" content="#0B1220">
+  <script>
+    // Set the theme before the page paints, so it never flashes the wrong colours.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem("theme"); } catch (e) {}
+      var theme = saved === "light" || saved === "dark" ? saved
+        : (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <link rel="stylesheet" href="{% static 'css/theme.css' %}">
 </head>
@@ -20,6 +30,7 @@
     </div>
     {% if user.is_authenticated %}
     <div class="who">
+      {% include "_theme_toggle.html" %}
       {% notif_bell %}
       <span class="avatar sm">{{ user.initials }}</span>
       <span class="who-name">{{ user.display_name }}</span>
@@ -68,6 +79,7 @@
 
   {% block content %}{% endblock %}
 </div>
+<script src="{% static 'js/theme.js' %}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
