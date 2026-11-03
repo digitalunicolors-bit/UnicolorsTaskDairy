@@ -1,7 +1,0 @@
-{% if user.is_lead %}
-<div class="team-tabs leave-tabs">
-  <a class="team-tab {% if active == 'mine' %}on{% endif %}" href="{% url 'my_leave' %}">My leave</a>
-  <a class="team-tab {% if active == 'approvals' %}on{% endif %}" href="{% url 'leave_approvals' %}">Approvals{% if pending_leave_count %} <span>{{ pending_leave_count }}</span>{% endif %}</a>
-  {% if user.is_admin %}<a class="team-tab {% if active == 'calendar' %}on{% endif %}" href="{% url 'calendar' %}">Holidays &amp; adding leave</a>{% endif %}
-</div>
-{% endif %}

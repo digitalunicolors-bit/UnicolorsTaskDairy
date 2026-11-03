@@ -1,4 +1,4 @@
-"""Pages added for day-to-day corporate use: clients, leave and holidays, archive, extensions,
+"""Pages added for day-to-day corporate use: clients, archive, extensions,
 member uploads, checklists, task requests, handovers and the monthly calendar."""
 import calendar
 import os
@@ -15,11 +15,11 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from . import indian_holidays, notifications, reports
-from .forms import ClientForm, HolidayForm, LeaveForm, LeaveRequestForm, MultipleFileField, OwnTaskForm, _check_size
+from . import notifications, reports
+from .forms import ClientForm, MultipleFileField, OwnTaskForm, _check_size
 from .models import (
-    Client, EmailFailure, ExtensionRequest, Holiday, Leave, Notification, Subtask, Task, TaskActivity,
-    TaskAttachment, TaskRequest, User, is_office_closed, leaves_managed_by, on_leave_ids, people_managed_by,
+    Client, EmailFailure, ExtensionRequest, Notification, Subtask, Task, TaskActivity,
+    TaskAttachment, TaskRequest, User, is_office_closed, people_managed_by,
     weekly_off_days,
 )
 from .views import S, _log, _safe_next, _parse_date, admin_required, manager_required, needs_handover
@@ -281,269 +281,12 @@ def client_update(request, pk):
     return redirect("clients")
 
 
-# ---------------------------------------------------------------- leave & holidays
-
-
-@admin_required
-def calendar_page(request):
-    today = timezone.localdate()
-    holiday_form = HolidayForm(request.POST if request.POST.get("kind") == "holiday" else None)
-    leave_form = LeaveForm(request.POST if request.POST.get("kind") == "leave" else None)
-    if request.method == "POST":
-        if request.POST.get("kind") == "holiday" and holiday_form.is_valid():
-            holiday = holiday_form.save()
-            messages.success(request, f"Added {holiday.name}.")
-            return redirect("calendar")
-        if request.POST.get("kind") == "leave" and leave_form.is_valid():
-            leave = leave_form.save(commit=False)
-            leave.added_by = leave.decided_by = request.user
-            leave.status, leave.decided_at = Leave.Status.APPROVED, timezone.now()
-            leave.save()
-            count = leave.tasks_due().count()
-            messages.success(request, f"Added leave for {leave.user.display_name}.")
-            if count:
-                messages.warning(request, f"{leave.user.display_name} has {count} task{'s' if count != 1 else ''} due during this leave. Reassign them or move the dates.")
-            return redirect("calendar")
-    chosen = {h.date: h.name.split(indian_holidays.SEPARATOR) for h in Holiday.objects.filter(date__gte=today)}
-    return render(request, "tasks/calendar.html", {
-        "catalog": [
-            {
-                "key": indian_holidays.key_for(day, name), "date": day, "name": name, "kind": kind,
-                "kind_label": indian_holidays.KIND_LABELS[kind], "checked": name in chosen.get(day, []),
-            }
-            for day, name, kind in indian_holidays.upcoming(today)
-        ],
-        "catalog_until": indian_holidays.COVERS_UNTIL,
-        "holiday_form": holiday_form,
-        "leave_form": leave_form,
-        "holidays": Holiday.objects.filter(date__gte=today - timedelta(days=30)),
-        "leaves": Leave.objects.filter(status=Leave.Status.APPROVED, end_date__gte=today - timedelta(days=30)).select_related("user"),
-        "pending_leave_count": leaves_managed_by(request.user).filter(status=Leave.Status.PENDING).count(),
-        "today": today,
-    })
-
-
-@admin_required
-@require_POST
-def holiday_catalog_save(request):
-    """Make the office holidays match what the admin ticked. Holidays they typed themselves are left alone."""
-    today = timezone.localdate()
-    ticked = set(request.POST.getlist("holidays"))
-    by_day = {}
-    for day, name, _ in indian_holidays.upcoming(today):
-        by_day.setdefault(day, []).append(name)
-    added, removed = [], []
-    for day, names in by_day.items():
-        holiday = Holiday.objects.filter(date=day).first()
-        current = holiday.name.split(indian_holidays.SEPARATOR) if holiday else []
-        wanted = [n for n in names if indian_holidays.key_for(day, n) in ticked]
-        custom = [n for n in current if n not in names]
-        final = custom + wanted
-        added += [(day, n) for n in wanted if n not in current]
-        removed += [n for n in current if n in names and n not in wanted]
-        if not final:
-            if holiday:
-                holiday.delete()
-        elif holiday:
-            if final != current:
-                holiday.name = indian_holidays.SEPARATOR.join(final)
-                holiday.save(update_fields=["name"])
-        else:
-            Holiday.objects.create(date=day, name=indian_holidays.SEPARATOR.join(final))
-    if added or removed:
-        messages.success(request, f"Office holidays updated: {len(added)} added, {len(removed)} removed.")
-    else:
-        messages.info(request, "No changes to the office holidays.")
-    new_days = {day for day, _ in added}
-    busy = Task.objects.filter(status__in=Task.NEEDS_WORK, due_date__in=new_days).count() if new_days else 0
-    if busy:
-        messages.warning(request, f"{busy} open task{'s are' if busy != 1 else ' is'} due on the holidays you just added. Check those dates.")
-    return redirect("calendar")
-
-
-@admin_required
-@require_POST
-def holiday_delete(request, pk):
-    get_object_or_404(Holiday, pk=pk).delete()
-    return redirect("calendar")
-
-
-@admin_required
-@require_POST
-def leave_delete(request, pk):
-    leave = get_object_or_404(Leave, pk=pk)
-    leave.status = Leave.Status.CANCELLED
-    leave.save(update_fields=["status"])
-    return redirect("calendar")
-
-
-# ---------------------------------------------------------------- applying for leave
-
-
-def _tell_about_leave(people, actor, message):
-    Notification.objects.bulk_create([
-        Notification(recipient=p, actor=actor, verb=Notification.Verb.LEAVE, message=message[:300])
-        for p in people if p.pk != actor.pk
-    ])
-
-
-@login_required
-def my_leave(request):
-    """Everyone's own leave page: apply, follow requests, cancel, and see office holidays."""
-    user = request.user
-    today = timezone.localdate()
-    form = LeaveRequestForm(request.POST or None, user=user)
-    if request.method == "POST" and form.is_valid():
-        leave = form.save(commit=False)
-        leave.user, leave.added_by = user, user
-        approvers = leave.approvers()
-        leave.status = Leave.Status.PENDING if approvers else Leave.Status.APPROVED
-        if not approvers:  # the only admin: nobody else exists to approve
-            leave.decided_by, leave.decided_at = user, timezone.now()
-        leave.save()
-        if approvers:
-            _tell_about_leave(
-                approvers, user,
-                f"{user.display_name} applied for leave, {leave.dates_label}",
-            )
-            notifications.leave_requested(leave, approvers)
-            messages.success(request, "Leave request sent. Nothing changes until it's approved.")
-        else:
-            messages.success(request, "Your leave is saved.")
-        return redirect("my_leave")
-    return render(request, "tasks/leave.html", {
-        "form": form,
-        "my_requests": user.leaves.select_related("decided_by", "approver")[:30],
-        "holidays": Holiday.objects.filter(date__gte=today)[:40],
-        "today": today,
-        "pending_leave_count": leaves_managed_by(user).filter(status=Leave.Status.PENDING).count() if user.is_lead else 0,
-    })
-
-
-@login_required
-def leave_check(request):
-    """While applying: the person's tasks due, and holidays, in the dates they picked."""
-    start = _parse_date(request.GET.get("start"), None)
-    end = _parse_date(request.GET.get("end"), None)
-    if not start or not end or end < start or (end - start).days > 366:
-        return JsonResponse({"tasks": [], "holidays": []})
-    tasks = Task.objects.filter(assignee=request.user, status__in=Task.NEEDS_WORK, due_date__range=(start, end))
-    return JsonResponse({
-        "tasks": [{"title": t.title, "due": f"{t.due_date:%d %b}"} for t in tasks],
-        "holidays": [{"name": h.name, "date": f"{h.date:%d %b}"} for h in Holiday.objects.filter(date__range=(start, end))],
-    })
-
-
-@login_required
-@require_POST
-def leave_cancel(request, pk):
-    leave = get_object_or_404(Leave.objects.select_related("user", "user__manager"), pk=pk, user=request.user)
-    if not leave.can_cancel:
-        messages.error(request, "This leave can't be cancelled.")
-        return redirect("my_leave")
-    was_approved = leave.status == Leave.Status.APPROVED
-    leave.status = Leave.Status.CANCELLED
-    leave.save(update_fields=["status"])
-    if was_approved:
-        people = leave.approvers()
-        _tell_about_leave(
-            people, request.user,
-            f"{request.user.display_name} cancelled their leave, {leave.dates_label}",
-        )
-        notifications.leave_cancelled(leave, people)
-    messages.success(request, "Leave cancelled.")
-    return redirect("my_leave")
-
-
-@manager_required
-def leave_approvals(request):
-    """Leave waiting for a decision, with what each person's absence would affect."""
-    today = timezone.localdate()
-    scope = leaves_managed_by(request.user).select_related("user", "decided_by", "approver")
-    pending = []
-    for leave in scope.filter(status=Leave.Status.PENDING).order_by("start_date"):
-        others = scope.filter(
-            status=Leave.Status.APPROVED, start_date__lte=leave.end_date, end_date__gte=leave.start_date,
-        ).exclude(user=leave.user)
-        pending.append({"leave": leave, "tasks": list(leave.tasks_due()), "others": list(others)})
-    coming_up = []
-    for leave in scope.filter(status=Leave.Status.APPROVED, end_date__gte=today).order_by("start_date"):
-        tasks = list(leave.tasks_due())
-        if tasks:
-            coming_up.append({"leave": leave, "tasks": tasks})
-    return render(request, "tasks/leave_approvals.html", {
-        "pending": pending,
-        "coming_up": coming_up,
-        "decided": scope.exclude(status=Leave.Status.PENDING).order_by("-decided_at", "-created_at")[:15],
-        "people": list(people_managed_by(request.user)),
-        "pending_leave_count": len(pending),
-    })
-
-
-@manager_required
-@require_POST
-def leave_decide(request, pk, decision):
-    leave = get_object_or_404(Leave.objects.select_related("user", "user__manager"), pk=pk)
-    if not leave.can_decide(request.user):
-        raise PermissionDenied
-    if leave.status != Leave.Status.PENDING:
-        messages.info(request, "That request was already decided.")
-        return redirect("leave_approvals")
-    if decision not in ("approve", "decline"):
-        raise PermissionDenied
-    approved = decision == "approve"
-    leave.status = Leave.Status.APPROVED if approved else Leave.Status.DECLINED
-    leave.decided_by, leave.decided_at = request.user, timezone.now()
-    leave.decision_note = request.POST.get("note", "").strip()[:500]
-    leave.save()
-    word = "approved" if approved else "declined"
-    text = f"Your leave, {leave.dates_label}, was {word}"
-    if leave.decision_note:
-        text += f": {leave.decision_note}"
-    _tell_about_leave([leave.user], request.user, text)
-    notifications.leave_decided(leave)
-    messages.success(request, f"Leave {word} for {leave.user.display_name}.")
-    if approved:
-        count = leave.tasks_due().count()
-        if count:
-            messages.warning(request, f"{leave.user.display_name} has {count} task{'s' if count != 1 else ''} due during this leave. Reassign them below, or move their dates.")
-    return redirect("leave_approvals")
-
-
-@manager_required
-@require_POST
-def leave_reassign(request, pk):
-    """Give the tasks due during someone's leave to one other person."""
-    leave = get_object_or_404(Leave.objects.select_related("user", "user__manager"), pk=pk, status=Leave.Status.APPROVED)
-    if not leave.can_decide(request.user):
-        raise PermissionDenied
-    new_owner = people_managed_by(request.user).exclude(pk=leave.user_id).filter(pk=request.POST.get("to")).first()
-    if new_owner is None:
-        messages.error(request, "Pick who should take these tasks.")
-        return redirect("leave_approvals")
-    moved = 0
-    for task in leave.tasks_due().select_related("assignee", "assignee__manager"):
-        task.assignee = new_owner
-        try:
-            with transaction.atomic():
-                task.save()
-        except IntegrityError:
-            continue
-        task.collaborators.remove(new_owner)
-        _log(task, request.user, TaskActivity.Action.EDITED, f"Reassigned from {leave.user.display_name} to {new_owner.display_name}, who is covering their leave")
-        Notification.send(task, request.user, "assigned", recipients=[new_owner])
-        notifications.task_assigned(task, request.user)
-        moved += 1
-    messages.success(request, f"Moved {moved} task{'s' if moved != 1 else ''} to {new_owner.display_name}.")
-    return redirect("leave_approvals")
-
-
 # ---------------------------------------------------------------- monthly calendar
 
 
 @login_required
 def schedule(request):
-    """Deadlines, office holidays and approved leave on one monthly calendar.
+    """Deadlines on one monthly calendar.
 
     Admins see everyone, team leads their team and themselves, team members their own work.
     """
@@ -563,16 +306,12 @@ def schedule(request):
         tasks = Task.objects.filter(Q(assignee=user) | Q(collaborators=user) | Q(watchers=user))
         people = User.objects.filter(pk=user.pk)
     tasks = Task.objects.filter(pk__in=tasks.values("pk"), due_date__range=(first, last))
-    leaves = Leave.objects.filter(
-        status=Leave.Status.APPROVED, start_date__lte=last, end_date__gte=first, user__in=people,
-    ).select_related("user")
 
     member_id = request.GET.get("member", "all")
     if not member_id.isdigit() or not people.filter(pk=member_id).exists():
         member_id = "all"
     if member_id != "all":
         tasks = tasks.filter(Q(assignee_id=member_id) | Q(collaborators=member_id))
-        leaves = leaves.filter(user_id=member_id)
     client_id = request.GET.get("client", "all")
     if client_id.isdigit():
         tasks = tasks.filter(client_id=client_id)
@@ -584,8 +323,6 @@ def schedule(request):
         by_day.setdefault(task.due_date, []).append(task)
     for items in by_day.values():
         items.sort(key=lambda t: (t.status == S.DONE, Task.PRIORITY_ORDER.get(t.priority, 1)))
-    holidays = {h.date: h.name for h in Holiday.objects.filter(date__range=(first, last))}
-    leaves = list(leaves)
     off_days = weekly_off_days()
 
     calendar_weeks = []
@@ -593,23 +330,14 @@ def schedule(request):
         days = []
         for day in week:
             items = by_day.get(day, [])
-            today_leaves = [leave for leave in leaves if leave.start_date <= day <= leave.end_date]
-            away = [leave.user for leave in today_leaves if not leave.is_half_day]
-            half_away = [leave.user for leave in today_leaves if leave.is_half_day]
-            away_ids = {p.pk for p in away}
             days.append({
                 "date": day,
                 "in_month": day.month == month.month,
                 "is_today": day == today,
                 "closed": day.weekday() in off_days,
-                "holiday": holidays.get(day),
-                "away": away,
-                "half_away": half_away,
                 "tasks": items[:4],
                 "more_tasks": items[4:],
-                # A deadline for someone who's on leave that day, the kind of clash to catch early.
-                "clashes": sum(1 for t in items if t.assignee_id in away_ids and t.status in Task.NEEDS_WORK),
-                "busy": len(items) > 0 or bool(today_leaves) or day in holidays,
+                "busy": bool(items),
                 "can_assign": user.is_lead and day >= today,
             })
         calendar_weeks.append(days)
@@ -658,8 +386,6 @@ def own_task_add(request):
     messages.success(request, f'Added "{task.title}" to your tasks. It goes for approval when you mark it complete.')
     if is_office_closed(task.due_date):
         messages.warning(request, f"{task.due_date:%a, %d %b} is a day the office is closed. Check the due date.")
-    if task.assignee_id in on_leave_ids(task.due_date):
-        messages.warning(request, "You're on leave on that date. Check the due date.")
     return redirect("my_tasks")
 
 

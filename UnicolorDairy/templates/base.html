@@ -47,7 +47,6 @@
       <a class="tab {% if name == 'schedule' %}on{% endif %}" href="{% url 'schedule' %}">Calendar</a>
       <a class="tab {% if name == 'report' %}on{% endif %}" href="{% url 'report' %}">Monthly reports</a>
       <a class="tab {% if name == 'team' or name == 'user_add' or name == 'user_edit' or name == 'user_password' %}on{% endif %}" href="{% url 'team' %}">Team</a>
-      <a class="tab {% if name == 'calendar' or name == 'my_leave' or name == 'leave_approvals' %}on{% endif %}" href="{% url 'my_leave' %}">Leave &amp; holidays</a>
       <div class="tab-more" tabindex="0">
         <span class="tab tab-more-label {% if name == 'clients' or name == 'archive' %}on{% endif %}">More ▾</span>
         <div class="tab-more-list">
@@ -61,12 +60,10 @@
       <a class="tab {% if name == 'schedule' %}on{% endif %}" href="{% url 'schedule' %}">Calendar</a>
       <a class="tab {% if name == 'report' %}on{% endif %}" href="{% url 'report' %}">Team reports</a>
       <a class="tab {% if name == 'clients' %}on{% endif %}" href="{% url 'clients' %}">Clients</a>
-      <a class="tab {% if name == 'my_leave' or name == 'leave_approvals' %}on{% endif %}" href="{% url 'my_leave' %}">Leave &amp; holidays</a>
     {% else %}
       <a class="tab {% if name == 'my_tasks' %}on{% endif %}" href="{% url 'my_tasks' %}">My tasks</a>
       <a class="tab {% if name == 'schedule' %}on{% endif %}" href="{% url 'schedule' %}">Calendar</a>
       <a class="tab {% if name == 'report' %}on{% endif %}" href="{% url 'report' %}">My month</a>
-      <a class="tab {% if name == 'my_leave' %}on{% endif %}" href="{% url 'my_leave' %}">Leave &amp; holidays</a>
     {% endif %}
     {% endwith %}
   </nav>

@@ -36,13 +36,6 @@
   </div>
 {% endfor %}
 
-{% if pending_leave_count %}
-  <div class="banner warning row-between">
-    <span><b>{{ pending_leave_count }}</b> leave request{{ pending_leave_count|pluralize }} waiting for a decision.</span>
-    <a class="btn sm" href="{% url 'leave_approvals' %}">Review</a>
-  </div>
-{% endif %}
-
 {# ---------- requests for more time ---------- #}
 {% if pending_extensions %}
 <details class="panel queue fold">
@@ -118,12 +111,11 @@
   <span class="muted small wl-label">Team workload</span>
   {% for w in workload %}
     <a class="wl-chip {% if member_id == w.user.id|stringformat:'s' %}on{% endif %}" href="?show=open&member={{ w.user.id }}"
-       title="{{ w.user.display_name }}: {{ w.open }} open{% if w.hours %}, about {{ w.hours|floatformat:'-1' }} hours{% endif %}{% if w.overdue %}, {{ w.overdue }} overdue{% endif %}{% if w.away %}, on leave today{% endif %}{% if w.gone %}, deactivated{% endif %}">
+       title="{{ w.user.display_name }}: {{ w.open }} open{% if w.hours %}, about {{ w.hours|floatformat:'-1' }} hours{% endif %}{% if w.overdue %}, {{ w.overdue }} overdue{% endif %}{% if w.gone %}, deactivated{% endif %}">
       <span class="avatar xs {% if w.user.is_admin %}is-admin{% endif %}">{{ w.user.initials }}</span>
       {{ w.user.first_name|default:w.user.display_name }} <b>{{ w.open }}</b>
       {% if w.hours %}<span class="muted small">{{ w.hours|floatformat:"-1" }}h</span>{% endif %}
       {% if w.overdue %}<i>{{ w.overdue }} late</i>{% endif %}
-      {% if w.away %}<span class="wl-tag">On leave</span>{% endif %}
       {% if w.gone %}<span class="wl-tag">Left</span>{% endif %}
     </a>
   {% endfor %}

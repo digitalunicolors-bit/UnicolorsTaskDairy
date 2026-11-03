@@ -17,7 +17,7 @@
 
   <div class="td-grid td-key">
     <div><small>Assigned to</small><b><span class="avatar xs">{{ t.assignee.initials }}</span>{{ t.assignee.display_name }}</b>{% if t.assignee.designation %}<span class="muted small">{{ t.assignee.designation }}</span>{% endif %}</div>
-    <div><small>Due date</small><b class="{% if t.is_late %}red{% endif %}">{{ t.due_date|date:"D, j M Y" }}</b>{% if t.due_date_moved %}<span class="muted small">First due {{ t.original_due_date|date:"j M" }}</span>{% endif %}{% if away_on_due %}<span class="muted small">{{ t.assignee.display_name }} is on leave that day</span>{% endif %}</div>
+    <div><small>Due date</small><b class="{% if t.is_late %}red{% endif %}">{{ t.due_date|date:"D, j M Y" }}</b>{% if t.due_date_moved %}<span class="muted small">First due {{ t.original_due_date|date:"j M" }}</span>{% endif %}</div>
     {% with co=t.collaborators.all %}{% if co %}<div><small>Working with</small><b>{% for p in co %}{{ p.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</b></div>{% endif %}{% endwith %}
   </div>
 

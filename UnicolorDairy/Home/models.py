@@ -83,12 +83,8 @@ def weekly_off_days():
     return getattr(settings, "WEEKLY_OFF_DAYS", [6])
 
 
-def is_holiday(day):
-    return Holiday.objects.filter(date=day).exists()
-
-
 def is_office_closed(day):
-    return day.weekday() in weekly_off_days() or is_holiday(day)
+    return day.weekday() in weekly_off_days()
 
 
 def next_working_day(day):
@@ -97,26 +93,6 @@ def next_working_day(day):
             return day
         day += timedelta(days=1)
     return day
-
-
-def on_leave_ids(day):
-    """People away for the whole of that day. A request has no effect until it's approved,
-    and someone on half-day leave still works part of the day, so they aren't counted."""
-    return set(
-        Leave.objects.filter(status=Leave.Status.APPROVED, day_part=Leave.DayPart.FULL, start_date__lte=day, end_date__gte=day)
-        .values_list("user_id", flat=True)
-    )
-
-
-def is_on_leave(user, day):
-    return Leave.objects.filter(status=Leave.Status.APPROVED, day_part=Leave.DayPart.FULL, user=user, start_date__lte=day, end_date__gte=day).exists()
-
-
-def leaves_managed_by(user):
-    """Leave this person can decide: everyone else's for admins, their own team's for team leads."""
-    if user.is_admin:
-        return Leave.objects.exclude(user=user)
-    return Leave.objects.filter(models.Q(user__manager=user) | models.Q(approver=user)).exclude(user=user)
 
 
 class Client(models.Model):
@@ -131,113 +107,6 @@ class Client(models.Model):
 
     def __str__(self):
         return self.name
-
-
-class Holiday(models.Model):
-    """A day the office is closed."""
-
-    date = models.DateField(unique=True)
-    name = models.CharField(max_length=255)
-
-    class Meta:
-        ordering = ["date"]
-
-    def __str__(self):
-        return f"{self.name} ({self.date:%d %b %Y})"
-
-
-class Leave(models.Model):
-    """Dates a person is away. Applied for by the person, or added directly by an admin."""
-
-    class Status(models.TextChoices):
-        PENDING = "pending", "Waiting for approval"
-        APPROVED = "approved", "Approved"
-        DECLINED = "declined", "Declined"
-        CANCELLED = "cancelled", "Cancelled"
-
-    class Kind(models.TextChoices):
-        CASUAL = "casual", "Casual leave"
-        SICK = "sick", "Sick leave"
-        OTHER = "other", "Other"
-
-    class DayPart(models.TextChoices):
-        FULL = "full", "Full day"
-        FIRST_HALF = "first_half", "First half"
-        SECOND_HALF = "second_half", "Second half"
-
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="leaves")
-    start_date = models.DateField()
-    end_date = models.DateField()
-    day_part = models.CharField(max_length=12, choices=DayPart.choices, default=DayPart.FULL)
-    note = models.CharField(max_length=200, blank=True)
-    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OTHER)
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPROVED, db_index=True)
-    approver = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="leaves_to_approve",
-        help_text="The person this request was sent to",
-    )
-    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
-    decided_at = models.DateTimeField(null=True, blank=True)
-    decision_note = models.CharField(max_length=500, blank=True)
-    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-start_date"]
-
-    def __str__(self):
-        return f"{self.user} {self.start_date}–{self.end_date}"
-
-    @property
-    def is_half_day(self):
-        return self.day_part != self.DayPart.FULL
-
-    @property
-    def days(self):
-        return 0.5 if self.is_half_day else (self.end_date - self.start_date).days + 1
-
-    @property
-    def length_label(self):
-        """How long the leave is, in words: "Half day", "1 day", "3 days"."""
-        if self.is_half_day:
-            return "Half day"
-        return "1 day" if self.days == 1 else f"{self.days} days"
-
-    @property
-    def dates_label(self):
-        """When the leave is, in words: "5 Nov 2026", "5 Nov 2026, first half", "5 Nov – 7 Nov 2026"."""
-        start, end = self.start_date, self.end_date
-        last = f"{end.day} {end:%b %Y}"
-        if start == end:
-            return f"{last}, {self.get_day_part_display().lower()}" if self.is_half_day else last
-        first = f"{start.day} {start:%b}" if start.year == end.year else f"{start.day} {start:%b %Y}"
-        return f"{first} – {last}"
-
-    @property
-    def can_cancel(self):
-        return self.status == self.Status.PENDING or (
-            self.status == self.Status.APPROVED and self.end_date >= timezone.localdate()
-        )
-
-    def approvers(self):
-        """Who is asked to decide: the person they picked and their reporting manager, never themselves.
-        Requests with nobody picked go to all admins and the reporting manager."""
-        picked = self.approver if self.approver_id and self.approver.is_active else None
-        people = [picked] if picked else [p for p in active_admins() if p.pk != self.user_id]
-        lead = self.user.manager
-        if lead and lead.is_active and lead.pk != self.user_id and all(p.pk != lead.pk for p in people):
-            people.append(lead)
-        return people
-
-    def can_decide(self, user):
-        return user.pk != self.user_id and (
-            user.is_admin or self.user.manager_id == user.pk or self.approver_id == user.pk
-        )
-
-    def tasks_due(self):
-        return Task.objects.filter(
-            assignee=self.user, status__in=Task.NEEDS_WORK, due_date__range=(self.start_date, self.end_date),
-        ).select_related("client")
 
 
 class LoginAttempt(models.Model):
@@ -573,13 +442,12 @@ class Notification(models.Model):
         EXTENSION = "extension", "Extension"
         REQUEST = "request", "Task request"
         FILE = "file", "File added"
-        LEAVE = "leave", "Leave"
 
     ICONS = {
         "assigned": "📌", "started": "▶️", "submitted": "📤", "approved": "✅",
         "changes": "✏️", "reopened": "↩️", "deleted": "🗑️",
         "commented": "💬", "mentioned": "@", "reminder": "⏰", "overdue": "⚠️", "edited": "📝",
-        "restored": "♻️", "hold": "⏸️", "resumed": "▶️", "extension": "📅", "request": "🙋", "file": "📎", "leave": "🌴",
+        "restored": "♻️", "hold": "⏸️", "resumed": "▶️", "extension": "📅", "request": "🙋", "file": "📎",
     }
 
     # (message for the person the task belongs to, message for everyone else)
@@ -807,7 +675,7 @@ class RecurringTask(models.Model):
         if self.frequency == self.Frequency.DAILY:
             return not is_office_closed(day)
         if self.frequency == self.Frequency.WEEKDAYS:
-            return day.weekday() < 5 and not is_holiday(day)
+            return day.weekday() < 5
         if self.frequency == self.Frequency.WEEKLY:
             return day.weekday() in self.weekday_list
         if self.frequency == self.Frequency.MONTHLY:

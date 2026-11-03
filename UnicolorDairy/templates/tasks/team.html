@@ -81,7 +81,6 @@
           <b>{{ u.display_name }}</b>
           {% if u == user %}<span class="you">You</span>{% endif %}
           <span class="role {% if u.is_admin %}admin{% endif %}">{{ u.role_label }}</span>
-          {% if r.away %}<span class="invite-status pending">On leave today</span>{% endif %}
           {% if r.state == "pending" %}<span class="invite-status pending">● Invite pending</span>
           {% elif r.state == "expired" %}<span class="invite-status expired">⚠ Invite expired</span>
           {% elif r.state == "inactive" %}<span class="invite-status expired">Deactivated</span>{% endif %}

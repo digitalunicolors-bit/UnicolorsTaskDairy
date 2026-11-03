@@ -32,8 +32,8 @@ from .forms import (
     TaskEditForm,
 )
 from .models import (
-    AdminNote, Client, EmailFailure, Leave, LoginAttempt, leaves_managed_by, ExtensionRequest, Notification, RecurringTask, Task, TaskActivity, TaskAttachment,
-    TaskComment, TaskRequest, User, active_admins, find_mentioned_users, is_office_closed, on_leave_ids,
+    AdminNote, Client, EmailFailure, LoginAttempt, ExtensionRequest, Notification, RecurringTask, Task, TaskActivity, TaskAttachment,
+    TaskComment, TaskRequest, User, active_admins, find_mentioned_users, is_office_closed,
     people_managed_by,
 )
 
@@ -222,7 +222,6 @@ def dashboard(request):
         .prefetch_related("collaborators").order_by("submitted_at", "due_date")[:6]
     )
     members = list(people_managed_by(request.user))
-    away = on_leave_ids(today)
     workload = []
     owners = {t.assignee_id for t in open_all}
     gone = list(User.objects.filter(pk__in=owners, is_active=False))
@@ -234,7 +233,6 @@ def dashboard(request):
                 "open": len(mine),
                 "hours": sum((t.estimated_hours or 0) for t in mine),
                 "overdue": sum(1 for t in mine if t.status in NEEDS_WORK and t.due_date < today),
-                "away": u.pk in away,
                 "gone": not u.is_active,
             })
     orphaned = [
@@ -259,7 +257,6 @@ def dashboard(request):
         "orphaned": orphaned,
         "pending_extensions": pending_extensions,
         "task_requests": list(request_scope),
-        "pending_leave_count": leaves_managed_by(request.user).filter(status=Leave.Status.PENDING).count(),
         "form": form,
         "board": _board(tasks),
         "show": show,
@@ -331,10 +328,6 @@ def assign_task(request):
         messages.success(request, f'"{data["title"]}" assigned to {names}.')
     if is_office_closed(data["due_date"]):
         messages.warning(request, f'{data["due_date"]:%a, %d %b} is a day the office is closed. Check the due date.')
-    away = on_leave_ids(data["due_date"])
-    on_leave = [u.display_name for u in everyone if u.pk in away]
-    if on_leave:
-        messages.warning(request, f'On leave on the due date: {", ".join(on_leave)}.')
     return redirect("dashboard")
 
 
@@ -467,7 +460,6 @@ def task_detail(request, pk):
         "max_upload_mb": getattr(settings, "MAX_UPLOAD_MB", 20),
         "min_extension_date": timezone.localdate().isoformat(),
         "needs_work": task.status in NEEDS_WORK,
-        "away_on_due": task.assignee_id in on_leave_ids(task.due_date),
     })
 
 
@@ -873,7 +865,6 @@ def team(request):
     month_tasks = list(Task.objects.filter(due_date__year=today.year, due_date__month=today.month))
     open_tasks = list(Task.objects.exclude(status=S.DONE).only("assignee_id", "status", "due_date"))
     with_tasks = set(Task.all_objects.values_list("assignee_id", flat=True).distinct())
-    away = on_leave_ids(today)
 
     rows = []
     counts = {"all": 0, "admin": 0, "member": 0, "pending": 0, "inactive": 0}
@@ -896,7 +887,6 @@ def team(request):
             "overdue": sum(1 for t in mine if t.is_late),
             "has_tasks": u.id in with_tasks,
             "can_manage": request.user.can_manage_person(u),
-            "away": u.pk in away,
         })
         counts["all"] += 1
         counts["admin" if u.is_admin else "member"] += 1
@@ -1248,9 +1238,6 @@ def notification_open(request, pk):
     if not n.is_read:
         n.is_read = True
         n.save(update_fields=["is_read"])
-    if n.verb == Notification.Verb.LEAVE:
-        mine = n.message.startswith("Your leave") or not request.user.is_lead
-        return redirect("my_leave" if mine else "leave_approvals")
     t = n.task
     if t is None or (t.archived_at and not request.user.is_admin):  # task was removed
         return redirect("notification_list")

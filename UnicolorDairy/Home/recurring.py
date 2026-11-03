@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from . import notifications
 from .models import (
-    Notification, RecurringTask, Task, TaskActivity, active_admins, find_mentioned_users, next_working_day, on_leave_ids,
+    Notification, RecurringTask, Task, TaskActivity, active_admins, find_mentioned_users, next_working_day,
 )
 
 log = logging.getLogger(__name__)
@@ -69,15 +69,7 @@ def _create_for_day(rule, day, today, tell_admins):
     people = list(rule.assignees.filter(is_active=True))
     if not people and tell_admins:
         _tell_admins(f"“{rule.title}” wasn't created for {day:%d %b}: nobody active is assigned to this schedule.")
-    away = on_leave_ids(day)
     for person in people:
-        if person.pk in away:
-            if tell_admins and not Task.all_objects.filter(recurring=rule, occurrence_date=day, assignee=person).exists():
-                _tell_admins(
-                    f"“{rule.title}” wasn't created for {person.display_name} on {day:%d %b} because they're on leave. "
-                    "Assign cover if it still needs doing."
-                )
-            continue
         try:
             with transaction.atomic():
                 task = Task.objects.create(

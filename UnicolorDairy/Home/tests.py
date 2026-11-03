@@ -1,6 +1,6 @@
 import os
 import tempfile
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from unittest import mock
 
@@ -12,10 +12,10 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from . import indian_holidays, recurring, reminders, reports, summaries
+from . import recurring, reminders, reports, summaries
 from .models import (
-    Client, EmailFailure, ExtensionRequest, Holiday, Leave, LoginAttempt, Notification, RecurringTask, Subtask, Task,
-    TaskComment, TaskRequest, User, is_office_closed, next_working_day, on_leave_ids,
+    Client, EmailFailure, ExtensionRequest, LoginAttempt, Notification, RecurringTask, Subtask, Task,
+    TaskComment, TaskRequest, User, next_working_day,
 )
 
 
@@ -211,22 +211,19 @@ class CorporateTests(TestCase):
         self.post(self.admin, "recurring_toggle", rule.pk)
         self.assertEqual(recurring.create_recurring_tasks(self.today), 0)
 
-    def test_every_working_day_skips_closed_days_and_leave(self):
+    def test_every_working_day_skips_the_weekly_off_only(self):
         sunday = self.today + timedelta(days=(6 - self.today.weekday()) or 7)
         rule = RecurringTask.objects.create(title="R", frequency="daily", start_date=self.today - timedelta(days=1))
         self.assertFalse(rule.runs_on(sunday))
         monday = sunday + timedelta(days=1)
-        Holiday.objects.create(date=monday, name="Holiday")
-        self.assertFalse(rule.runs_on(monday))
-        self.assertEqual(next_working_day(sunday), monday + timedelta(days=1))
+        self.assertTrue(rule.runs_on(monday))
+        self.assertEqual(next_working_day(sunday), monday)
         rule2 = RecurringTask.objects.create(title="L", frequency="weekly", weekdays=str(self.today.weekday()), start_date=self.today, created_by=self.admin)
         RecurringTask.objects.filter(pk=rule2.pk).update(created_at=self.now)
         rule2.refresh_from_db()
         rule2.assignees.add(self.yashi, self.niyati)
-        Leave.objects.create(user=self.yashi, start_date=self.today, end_date=self.today)
         recurring.create_recurring_tasks(self.today, rules=[rule2])
-        self.assertEqual([t.assignee for t in Task.objects.filter(recurring=rule2)], [self.niyati])
-        self.assertTrue(Notification.objects.filter(recipient=self.admin, message__contains="on leave").exists())
+        self.assertEqual({t.assignee for t in Task.objects.filter(recurring=rule2)}, {self.yashi, self.niyati})
 
     def test_week_reminder_has_a_window_but_only_for_old_tasks(self):
         old = self.task(due_date=self.today + timedelta(days=5), title="Old")
@@ -560,10 +557,9 @@ class CorporateTests(TestCase):
         Subtask.objects.create(task=tasks[0], title="Step")
         ExtensionRequest.objects.create(task=tasks[1], requested_by=self.yashi, previous_date=self.today, requested_date=self.today + timedelta(days=1), reason="r")
         TaskRequest.objects.create(title="Ask", requested_by=self.yashi)
-        Leave.objects.create(user=self.yashi, start_date=self.today, end_date=self.today)
         for user in (self.owner, self.admin, self.lead, self.yashi, self.niyati):
             self.client.force_login(user)
-            for name in ["home", "dashboard", "my_tasks", "report", "team", "clients", "calendar", "archive", "recurring", "notification_list", "my_leave", "leave_approvals", "schedule"]:
+            for name in ["home", "dashboard", "my_tasks", "report", "team", "clients", "archive", "recurring", "notification_list", "schedule"]:
                 resp = self.client.get(reverse(name), follow=True)
                 self.assertEqual(resp.status_code, 200, (user.username, name))
             for t in tasks:
@@ -573,197 +569,18 @@ class CorporateTests(TestCase):
         self.assertEqual(self.client.get(reverse("task_edit", args=[tasks[0].pk])).status_code, 200)
         self.assertEqual(self.client.get(reverse("dashboard"), {"member": "abc", "client": "x"}).status_code, 200)
 
-    # ---- applying for leave
-
-    def apply(self, user, days=(1, 2), **extra):
-        return self.post(user, "my_leave", data={
-            "kind": "casual", "start_date": (self.today + timedelta(days=days[0])).isoformat(),
-            "end_date": (self.today + timedelta(days=days[1])).isoformat(), "note": "Family function",
-            "approver": (self.admin2 if user == self.admin else self.admin).pk, **extra,
-        })
-
-    def test_team_member_can_see_page_and_apply(self):
-        Holiday.objects.create(date=self.today + timedelta(days=5), name="Bhai Dooj")
-        self.client.force_login(self.yashi)
-        resp = self.client.get(reverse("my_leave"))
-        self.assertContains(resp, "Apply for leave")
-        self.assertContains(resp, "Bhai Dooj")
-        self.assertContains(self.client.get(reverse("my_tasks")), reverse("my_leave"))
-        self.apply(self.yashi)
-        leave = Leave.objects.get()
-        self.assertEqual((leave.user, leave.status), (self.yashi, "pending"))
-        self.assertEqual(leave.approver, self.admin)
-        self.assertTrue(Notification.objects.filter(recipient=self.lead, verb="leave").exists())
-        self.assertTrue(Notification.objects.filter(recipient=self.admin, verb="leave").exists())
-        self.assertFalse(Notification.objects.filter(recipient=self.admin2, verb="leave").exists())
-        sent_to = {m.to[0] for m in mail.outbox if "Leave request" in m.subject}
-        self.assertEqual(sent_to, {self.admin.email, self.lead.email})  # the person picked, and the reporting manager
-
-    def test_pending_leave_changes_nothing_until_approved(self):
-        self.post(self.yashi, "my_leave", data={"kind": "casual", "start_date": self.today.isoformat(), "end_date": self.today.isoformat(), "note": "x", "approver": self.admin.pk})
-        leave = Leave.objects.get()
-        self.assertNotIn(self.yashi.pk, on_leave_ids(self.today))
-        self.post(self.lead, "leave_decide", leave.pk, "approve", data={"note": "Enjoy"})
-        leave.refresh_from_db()
-        self.assertEqual((leave.status, leave.decided_by), ("approved", self.lead))
-        self.assertIn(self.yashi.pk, on_leave_ids(self.today))
-        self.assertTrue(Notification.objects.filter(recipient=self.yashi, verb="leave", message__contains="approved").exists())
-        self.assertTrue(any("approved" in m.subject for m in mail.outbox))
-
-    def test_decline_keeps_them_working(self):
-        self.apply(self.yashi, days=(0, 0))
-        self.post(self.admin, "leave_decide", Leave.objects.get().pk, "decline", data={"note": "Busy week"})
-        self.assertEqual(Leave.objects.get().status, "declined")
-        self.assertNotIn(self.yashi.pk, on_leave_ids(self.today))
-
-    def test_who_can_decide_leave(self):
-        self.apply(self.yashi)
-        leave = Leave.objects.get()
-        self.assertEqual(self.post(self.yashi, "leave_decide", leave.pk, "approve").status_code, 302)  # sent away
-        other_lead = User.objects.create_user("lead2", "l2@example.com", "pass12345!", role=User.Role.MANAGER)
-        self.assertEqual(self.post(other_lead, "leave_decide", leave.pk, "approve").status_code, 403)
-        leave.refresh_from_db()
-        self.assertEqual(leave.status, "pending")
-        self.apply(self.admin)
-        own = Leave.objects.get(user=self.admin)
-        self.assertEqual(self.post(self.admin, "leave_decide", own.pk, "approve").status_code, 403)
-        self.post(self.admin2, "leave_decide", own.pk, "approve")
-        own.refresh_from_db()
-        self.assertEqual(own.status, "approved")
-
-    def test_reason_is_private_to_approvers(self):
-        self.apply(self.yashi)
-        self.client.force_login(self.niyati)
-        self.assertNotContains(self.client.get(reverse("my_leave")), "Family function")
-        self.assertRedirects(self.client.get(reverse("leave_approvals")), reverse("my_tasks"))
-        self.client.force_login(self.lead)
-        self.assertContains(self.client.get(reverse("leave_approvals")), "Family function")
-        lead2 = User.objects.create_user("lead2", "l2@example.com", "pass12345!", role=User.Role.MANAGER)
-        self.client.force_login(lead2)
-        self.assertNotContains(self.client.get(reverse("leave_approvals")), "Family function")
-
-    def test_cannot_cancel_someone_elses_leave(self):
-        self.apply(self.yashi)
-        self.assertEqual(self.post(self.niyati, "leave_cancel", Leave.objects.get().pk).status_code, 404)
-
-    def test_cancel_pending_quietly_and_approved_with_notice(self):
-        self.apply(self.yashi)
-        leave = Leave.objects.get()
-        Notification.objects.all().delete()
-        self.post(self.yashi, "leave_cancel", leave.pk)
-        leave.refresh_from_db()
-        self.assertEqual(leave.status, "cancelled")
-        self.assertFalse(Notification.objects.exists())
-        self.apply(self.yashi)  # the cancelled dates are free again
-        leave = Leave.objects.exclude(status="cancelled").get()
-        self.post(self.lead, "leave_decide", leave.pk, "approve")
-        Notification.objects.all().delete()
-        self.post(self.yashi, "leave_cancel", leave.pk)
-        self.assertTrue(Notification.objects.filter(recipient=self.lead, message__contains="cancelled").exists())
-
-    def test_one_day_needs_only_one_date(self):
-        day = (self.today + timedelta(days=4)).isoformat()
-        self.post(self.yashi, "my_leave", data={"length": "one", "kind": "casual", "start_date": day, "end_date": "", "note": "x", "approver": self.admin.pk})
-        leave = Leave.objects.get()
-        self.assertEqual((leave.end_date, leave.day_part, leave.days), (leave.start_date, "full", 1))
-        self.assertEqual(leave.length_label, "1 day")
-
-    def test_a_date_left_in_the_hidden_to_box_is_ignored(self):
-        day = self.today + timedelta(days=4)
-        self.post(self.yashi, "my_leave", data={"length": "one", "kind": "casual", "start_date": day.isoformat(), "end_date": (day + timedelta(days=9)).isoformat(), "note": "x", "approver": self.admin.pk})
-        self.assertEqual(Leave.objects.get().end_date, day)
-
-    def test_more_than_one_day_needs_a_last_day(self):
-        day = (self.today + timedelta(days=4)).isoformat()
-        self.post(self.yashi, "my_leave", data={"length": "many", "kind": "casual", "start_date": day, "end_date": "", "note": "x", "approver": self.admin.pk})
-        self.assertFalse(Leave.objects.exists())
-
-    def half_day(self, user, day, half):
-        return self.post(user, "my_leave", data={"length": "half", "half": half, "kind": "casual", "start_date": day.isoformat(), "note": "x", "approver": self.admin.pk})
-
-    def test_half_day_leave(self):
-        day = self.today + timedelta(days=4)
-        self.half_day(self.yashi, day, "second_half")
-        leave = Leave.objects.get()
-        self.assertEqual((leave.end_date, leave.day_part, leave.days, leave.length_label), (day, "second_half", 0.5, "Half day"))
-        self.assertIn("second half", leave.dates_label)
-        self.assertTrue(any("second half" in m.subject for m in mail.outbox))
-        self.client.force_login(self.yashi)
-        self.assertContains(self.client.get(reverse("my_leave")), "second half")
-        self.post(self.admin, "leave_decide", leave.pk, "approve")
-        # They still work part of the day, so they stay in reminders and recurring tasks.
-        self.assertNotIn(self.yashi.pk, on_leave_ids(day))
-        self.client.force_login(self.admin)
-        self.assertContains(self.client.get(reverse("schedule"), {"month": f"{day:%Y-%m}"}), "half day")
-
-    def test_half_days_only_clash_with_the_same_half_or_a_full_day(self):
-        day = self.today + timedelta(days=4)
-        self.half_day(self.yashi, day, "first_half")
-        self.half_day(self.yashi, day, "first_half")
-        self.assertEqual(Leave.objects.count(), 1)
-        self.half_day(self.yashi, day, "second_half")
-        self.assertEqual(Leave.objects.count(), 2)
-        self.post(self.yashi, "my_leave", data={"length": "one", "kind": "casual", "start_date": day.isoformat(), "note": "x", "approver": self.admin.pk})
-        self.assertEqual(Leave.objects.count(), 2)
-        other = self.today + timedelta(days=6)
-        self.post(self.niyati, "my_leave", data={"length": "one", "kind": "casual", "start_date": other.isoformat(), "note": "x", "approver": self.admin.pk})
-        self.half_day(self.niyati, other, "first_half")
-        self.assertEqual(Leave.objects.filter(user=self.niyati).count(), 1)
-
-    def test_who_can_cover_is_gone(self):
-        self.client.force_login(self.yashi)
-        self.assertNotContains(self.client.get(reverse("my_leave")), "Who can cover")
-
-    def test_admin_can_add_half_day_for_someone(self):
-        day = self.today + timedelta(days=4)
-        self.post(self.admin, "calendar", data={"kind": "leave", "user": self.yashi.pk, "length": "half", "half": "first_half", "start_date": day.isoformat(), "note": ""})
-        self.assertEqual(Leave.objects.get().day_part, "first_half")
-
-    def test_overlap_and_bad_dates_are_refused(self):
-        self.apply(self.yashi, days=(1, 3))
-        self.apply(self.yashi, days=(3, 5))
-        self.assertEqual(Leave.objects.count(), 1)
-        self.apply(self.yashi, days=(9, 8))
-        self.apply(self.yashi, days=(-40, -39))
-        self.assertEqual(Leave.objects.count(), 1)
-
-    def test_approver_sees_affected_tasks_and_can_reassign(self):
-        due = self.today + timedelta(days=1)
-        t = self.task(due_date=due, title="Due in leave")
-        self.client.force_login(self.yashi)
-        check = self.client.get(reverse("leave_check"), {"start": due.isoformat(), "end": due.isoformat()}).json()
-        self.assertEqual(check["tasks"][0]["title"], "Due in leave")
-        self.apply(self.yashi)
-        leave = Leave.objects.get()
-        self.client.force_login(self.admin)
-        self.assertContains(self.client.get(reverse("leave_approvals")), "Due in leave")
-        self.post(self.admin, "leave_decide", leave.pk, "approve")
-        self.post(self.admin, "leave_reassign", leave.pk, data={"to": self.niyati.pk})
-        t.refresh_from_db()
-        self.assertEqual(t.assignee, self.niyati)
-
-    def test_approver_must_be_picked_and_must_be_an_admin_or_lead(self):
-        self.apply(self.yashi, approver="")
-        self.assertFalse(Leave.objects.exists())
-        self.apply(self.yashi, approver=self.niyati.pk)
-        self.assertFalse(Leave.objects.exists())
-        self.apply(self.yashi, approver=self.yashi.pk)
-        self.assertFalse(Leave.objects.exists())
-
-    def test_reporting_manager_is_suggested_first(self):
-        self.client.force_login(self.yashi)
-        form = self.client.get(reverse("my_leave")).context["form"]
-        self.assertEqual(form.fields["approver"].initial, self.lead.pk)
-
-    def test_a_team_lead_picked_by_someone_else_can_decide(self):
-        lead2 = User.objects.create_user("lead2", "l2@example.com", "pass12345!", role=User.Role.MANAGER)
-        self.apply(self.yashi, approver=lead2.pk)
-        leave = Leave.objects.get()
-        self.client.force_login(lead2)
-        self.assertContains(self.client.get(reverse("leave_approvals")), "Family function")
-        self.post(lead2, "leave_decide", leave.pk, "approve")
-        leave.refresh_from_db()
-        self.assertEqual((leave.status, leave.decided_by), ("approved", lead2))
+    def test_leave_and_holidays_are_gone(self):
+        for path in ["/leave/", "/leave/approvals/", "/calendar/"]:
+            for user in (self.admin, self.lead, self.yashi):
+                self.client.force_login(user)
+                self.assertEqual(self.client.get(path).status_code, 404, (path, user.username))
+        for user in (self.admin, self.lead, self.yashi):
+            self.client.force_login(user)
+            for name in ["my_tasks", "schedule", "report"]:
+                html = self.client.get(reverse(name)).content.decode().lower()
+                self.assertNotIn("holiday", html, (name, user.username))
+                self.assertNotIn("on leave", html, (name, user.username))
+                self.assertNotIn("/leave/", html, (name, user.username))
 
     def test_badge_says_admin_not_owner(self):
         self.client.force_login(self.owner)
@@ -771,99 +588,23 @@ class CorporateTests(TestCase):
         self.assertIn('<span class="role-badge">Admin</span>', html)
         self.assertNotIn("Owner", html)
 
-    def test_sole_admin_is_not_stuck(self):
-        User.objects.exclude(pk=self.owner.pk).update(is_active=False)
-        self.apply(self.owner, approver="")
-        self.assertEqual(Leave.objects.get().status, "approved")
-
-    def test_leave_notification_links_to_the_right_page(self):
-        self.apply(self.yashi)
-        n = Notification.objects.filter(recipient=self.lead).first()
-        self.client.force_login(self.lead)
-        self.assertRedirects(self.client.get(reverse("notification_open", args=[n.pk])), reverse("leave_approvals"))
-
-    # ---- Indian holiday calendar
-
-    def test_calendar_applies_nothing_until_an_admin_ticks_it(self):
-        self.assertFalse(Holiday.objects.exists())
-        self.client.force_login(self.admin)
-        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 12, 1)):
-            self.assertContains(self.client.get(reverse("calendar")), "Republic Day")
-        self.assertFalse(Holiday.objects.exists())
-
-    def test_admin_ticks_and_team_sees_only_those(self):
-        day = date(2027, 1, 26)
-        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 12, 1)):
-            self.post(self.admin, "holiday_catalog_save", data={"holidays": [indian_holidays.key_for(day, "Republic Day")]})
-            self.assertEqual(Holiday.objects.get().name, "Republic Day")
-            self.client.force_login(self.yashi)
-            html = self.client.get(reverse("my_leave")).content.decode()
-            self.assertIn("Republic Day", html)
-            self.assertNotIn("Good Friday", html)
-            self.assertTrue(is_office_closed(day))
-            self.post(self.admin, "holiday_catalog_save", data={})
-            self.assertFalse(Holiday.objects.exists())
-
-    def test_team_member_cannot_change_holidays(self):
-        self.post(self.yashi, "holiday_catalog_save", data={"holidays": [indian_holidays.key_for(date(2027, 1, 26), "Republic Day")]})
-        self.assertFalse(Holiday.objects.exists())
-        self.client.force_login(self.yashi)
-        self.assertRedirects(self.client.get(reverse("calendar")), reverse("my_tasks"))
-
-    def test_several_holidays_on_one_day_and_custom_ones_are_kept(self):
-        day = date(2027, 8, 15)
-        Holiday.objects.create(date=day, name="Office picnic")
-        Holiday.objects.create(date=date(2027, 2, 2), name="Annual day")
-        keys = [indian_holidays.key_for(day, "Independence Day"), indian_holidays.key_for(day, "Parsi New Year")]
-        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 12, 1)):
-            self.post(self.admin, "holiday_catalog_save", data={"holidays": keys})
-            self.assertEqual(Holiday.objects.get(date=day).name, "Office picnic / Independence Day / Parsi New Year")
-            self.client.force_login(self.admin)
-            rows = {r["name"]: r["checked"] for r in self.client.get(reverse("calendar")).context["catalog"] if r["date"] == day}
-            self.assertEqual(rows, {"Independence Day": True, "Milad-un-Nabi": False, "Parsi New Year": True})
-            self.post(self.admin, "holiday_catalog_save", data={})
-        self.assertEqual(Holiday.objects.get(date=day).name, "Office picnic")
-        self.assertEqual(Holiday.objects.get(date=date(2027, 2, 2)).name, "Annual day")
-
-    def test_made_up_or_past_holidays_are_ignored(self):
-        with mock.patch("django.utils.timezone.localdate", return_value=date(2027, 6, 1)):
-            self.post(self.admin, "holiday_catalog_save", data={"holidays": ["2027-07-01|Fake day", indian_holidays.key_for(date(2027, 1, 26), "Republic Day")]})
-        self.assertFalse(Holiday.objects.exists())
-
-    def test_holiday_list_is_clean(self):
-        seen = set()
-        for day, name, kind in indian_holidays.HOLIDAYS:
-            self.assertNotIn((day, name), seen)
-            seen.add((day, name))
-            self.assertNotIn(indian_holidays.SEPARATOR, name)
-            self.assertIn(kind, indian_holidays.KIND_LABELS)
-            self.assertLessEqual(day, indian_holidays.COVERS_UNTIL)
-
     # ---- monthly calendar
 
     def day_cell(self, resp, day):
         return next(d for w in resp.context["weeks"] for d in w if d["date"] == day)
 
-    def test_calendar_shows_deadlines_holidays_and_only_approved_leave(self):
+    def test_calendar_shows_deadlines(self):
         day = self.today + timedelta(days=1)
         self.task(title="Deadline", due_date=day)
-        Holiday.objects.create(date=day, name="Festival")
-        Leave.objects.create(user=self.yashi, start_date=day, end_date=day)
-        Leave.objects.create(user=self.niyati, start_date=day, end_date=day, status=Leave.Status.PENDING)
         self.client.force_login(self.admin)
         resp = self.client.get(reverse("schedule"), {"month": f"{day:%Y-%m}"})
         cell = self.day_cell(resp, day)
         self.assertEqual([t.title for t in cell["tasks"]], ["Deadline"])
-        self.assertEqual(cell["holiday"], "Festival")
-        self.assertEqual(cell["away"], [self.yashi])
-        self.assertEqual(cell["clashes"], 1)
-        self.assertContains(resp, "Festival")
 
     def test_calendar_scope_by_role(self):
         day = self.today
         self.task(title="Yashi work", due_date=day)
         self.task(title="Niyati work", assignee=self.niyati, due_date=day)
-        Leave.objects.create(user=self.niyati, start_date=day, end_date=day, note="Private reason")
         for user, sees, hidden in [
             (self.admin, ["Yashi work", "Niyati work"], []),
             (self.lead, ["Yashi work"], ["Niyati work"]),
@@ -877,9 +618,6 @@ class CorporateTests(TestCase):
                 self.assertIn(title, html, user)
             for title in hidden:
                 self.assertNotIn(title, html, user)
-            self.assertNotIn("Private reason", html)
-        self.client.force_login(self.yashi)
-        self.assertEqual(self.day_cell(self.client.get(reverse("schedule")), day)["away"], [])
 
     def test_calendar_filters_and_bad_input(self):
         c = Client.objects.create(name="Peanutji")
@@ -937,12 +675,10 @@ class CorporateTests(TestCase):
         day = self.working_day()
         self.task(title="Yashi done", status="review", submitted_at=self.now, due_date=day)
         self.task(title="Niyati done", assignee=self.niyati, status="review", submitted_at=self.now, due_date=day)
-        Leave.objects.create(user=self.yashi, start_date=day + timedelta(days=2), end_date=day + timedelta(days=2), status=Leave.Status.PENDING)
         mail.outbox.clear()
         summaries.send_morning_summaries(day)
         by_person = {m.to[0]: m for m in mail.outbox}
         self.assertIn("2 to approve", by_person[self.admin.email].subject)
-        self.assertIn("1 leave request", by_person[self.admin.email].subject)
         self.assertIn("1 to approve", by_person[self.lead.email].subject)
         self.assertIn("Yashi done", by_person[self.lead.email].body)
         self.assertNotIn("Niyati done", by_person[self.lead.email].body)
@@ -961,18 +697,10 @@ class CorporateTests(TestCase):
         self.assertEqual(summaries.send_morning_summaries(day), 1)
         self.assertEqual(summaries.send_morning_summaries(day), 0)
 
-    def test_no_summary_on_closed_days_or_while_on_leave(self):
+    def test_no_summary_on_the_weekly_off(self):
         sunday = self.today + timedelta(days=(6 - self.today.weekday()) or 7)
         self.task(due_date=sunday)
         self.assertEqual(summaries.send_morning_summaries(sunday), 0)
-        day = sunday + timedelta(days=1)
-        Holiday.objects.create(date=day, name="Festival")
-        self.task(due_date=day)
-        self.assertEqual(summaries.send_morning_summaries(day), 0)
-        day2 = day + timedelta(days=1)
-        self.task(due_date=day2)
-        Leave.objects.create(user=self.yashi, start_date=day2, end_date=day2)
-        self.assertEqual(summaries.send_morning_summaries(day2), 0)
 
     def test_nothing_to_report_means_no_email(self):
         mail.outbox.clear()

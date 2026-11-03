@@ -35,7 +35,6 @@ STYLES = {
     "mentioned": ("#2f6fde", "#eef3fd", "💬", "You were tagged"),
     "extension": ("#b7791f", "#fdf6e9", "📅", "Deadline"),
     "request": ("#2f6fde", "#eef3fd", "🙋", "Task request"),
-    "leave": ("#2a9d5c", "#ebf7f0", "🌴", "Leave"),
     "summary": ("#0B1220", "#FFF4CC", "☀️", "Your day"),
 }
 PRIORITY_COLORS = {"high": "#d93d42", "medium": "#b7791f", "low": "#2a9d5c"}
@@ -323,8 +322,6 @@ def morning_summary(user, summary, today):
         parts.append(f"{len(summary['today'])} due today")
     if summary["approvals"]:
         parts.append(f"{len(summary['approvals'])} to approve")
-    if summary["leave_requests"]:
-        parts.append(f"{summary['leave_requests']} leave request{'s' if summary['leave_requests'] != 1 else ''}")
     if summary["more_time"]:
         parts.append(f"{summary['more_time']} asking for more time")
     extra = len(items) - len(rows)
@@ -339,65 +336,6 @@ def morning_summary(user, summary, today):
         footer=f"And {extra} more in the Workspace." if extra else "",
     )
     return _send(ctx, [user.email], background=False)
-
-
-def _leave_rows(leave):
-    rows = [
-        {"label": "Person", "value": leave.user.display_name, "bold": True},
-        {"label": "Type", "value": leave.get_kind_display()},
-        {"label": "Length", "value": leave.length_label},
-    ]
-    if leave.start_date == leave.end_date:
-        day = f"{leave.start_date:%a, %d %b %Y}"
-        rows.append({"label": "Date", "value": f"{day}, {leave.get_day_part_display().lower()}" if leave.is_half_day else day})
-    else:
-        rows.append({"label": "From", "value": f"{leave.start_date:%a, %d %b %Y}"})
-        rows.append({"label": "To", "value": f"{leave.end_date:%a, %d %b %Y}"})
-    return rows
-
-
-def leave_requested(leave, people):
-    ctx = _context(
-        "leave",
-        subject=f"Leave request: {leave.user.display_name}, {leave.dates_label}",
-        heading="New leave request",
-        greeting_name="team",
-        intro=f"{leave.user.display_name} applied for leave and needs a decision.",
-        rows=_leave_rows(leave) + (
-            [{"label": "Sent to", "value": leave.approver.display_name}] if leave.approver_id else []
-        ),
-        notes=[{"label": "Reason", "text": leave.note, "color": "#2a9d5c"}],
-        button={"label": "Review request", "url": _url("leave_approvals")},
-    )
-    _send(ctx, [p.email for p in people])
-
-
-def leave_decided(leave):
-    approved = leave.status == leave.Status.APPROVED
-    ctx = _context(
-        "leave",
-        subject=f"Your leave was {'approved' if approved else 'declined'}: {leave.dates_label}",
-        heading=f"Leave {'approved' if approved else 'declined'}",
-        greeting_name=leave.user.first_name or leave.user.display_name,
-        intro=f"{leave.decided_by.display_name if leave.decided_by else 'Your manager'} {'approved' if approved else 'declined'} your leave request.",
-        rows=_leave_rows(leave),
-        notes=[{"label": "Note", "text": leave.decision_note, "color": "#2a9d5c"}],
-        button={"label": "View my leave", "url": _url("my_leave")},
-    )
-    _send(ctx, [leave.user.email])
-
-
-def leave_cancelled(leave, people):
-    ctx = _context(
-        "leave",
-        subject=f"Leave cancelled: {leave.user.display_name}, {leave.dates_label}",
-        heading="Leave cancelled",
-        greeting_name="team",
-        intro=f"{leave.user.display_name} cancelled this leave, so they're working on these dates after all.",
-        rows=_leave_rows(leave),
-        button={"label": "Open leave page", "url": _url("leave_approvals")},
-    )
-    _send(ctx, [p.email for p in people])
 
 
 REMINDER_TEXT = {
@@ -489,7 +427,7 @@ def welcome(user, by, background=False):
         subject="You're invited to Unicolors Workspace",
         heading="You're invited to join the team",
         greeting_name=user.first_name or user.display_name,
-        intro=f"{by.display_name} invited you to Unicolors Workspace, where the team assigns and tracks work and manages leave.",
+        intro=f"{by.display_name} invited you to Unicolors Workspace, where the team assigns and tracks work.",
         rows=rows,
         button={"label": "Join workspace", "url": invite_url},
         footer=f"This invitation link expires in {hours} hours. If it expires, ask your admin to resend it.",

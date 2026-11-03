@@ -152,11 +152,6 @@ label, .fl { color: var(--muted); font-weight: 500; }
 
 /* ---------- tables and reports ---------- */
 table.rep th, .rep th { text-transform: none; letter-spacing: 0; color: var(--muted); }
-.hol-row { border-top-color: var(--line); }
-.pill.hol-national { color: var(--brand-ink); background: var(--brand); }
-.pill.hol-central { color: var(--ink); background: var(--surface2); }
-.pill.hol-gujarat { color: var(--accent-text); background: transparent; border: 1px solid color-mix(in srgb, var(--brand) 45%, transparent); }
-.leave-status.pending { color: var(--accent-text); background: color-mix(in srgb, var(--brand) 13%, transparent); }
 td.all, .legend i.all { color: var(--on-status); }
 
 /* ---------- login: half the screen is pure brand ---------- */
@@ -233,20 +228,16 @@ input[type=file]::file-selector-button { background: var(--surface2); color: var
 .cal-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-left: auto; align-items: center; }
 .cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .cal-key { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.cal-key.holiday { background: var(--brand); }
-.cal-key.leave { background: var(--c-hold); }
 .cal-key.late { background: var(--hi); }
-.cal-key.clash { background: transparent; border: 2px solid var(--hi); }
 .cal { border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: var(--surface); }
 .cal-head, .cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .cal-head div { padding: 10px 12px; color: var(--muted); font-size: 13px; font-weight: 550; border-bottom: 1px solid var(--line); }
 .cal-week + .cal-week .cal-day { border-top: 1px solid var(--line); }
 .cal-day { min-height: 124px; padding: 8px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .cal-day:first-child { border-left: 0; }
-.cal-day.closed, .cal-day.is-holiday { background: var(--bg); }
+.cal-day.closed { background: var(--bg); }
 .cal-day.out { background: var(--bg); }
 .cal-day.out > * { opacity: .45; }
-.cal-day.has-clash { box-shadow: inset 0 0 0 2px var(--hi); }
 .cal-date { display: flex; align-items: center; justify-content: space-between; min-height: 26px; }
 .cal-num { font-family: var(--display); font-weight: 650; font-size: 15px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
 .cal-day.today .cal-num { background: var(--brand); color: var(--brand-ink); }
@@ -254,9 +245,6 @@ input[type=file]::file-selector-button { background: var(--surface2); color: var
 .cal-add { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); text-decoration: none; font-size: 16px; line-height: 1; opacity: 0; }
 .cal-day:hover .cal-add, .cal-add:focus-visible { opacity: 1; }
 .cal-add:hover { background: var(--brand); color: var(--brand-ink); }
-.cal-holiday { background: var(--brand); color: var(--brand-ink); font-size: 12px; font-weight: 650; padding: 3px 7px; border-radius: 7px; overflow-wrap: anywhere; line-height: 1.25; }
-.cal-leave { background: color-mix(in srgb, var(--c-hold) 18%, transparent); color: var(--c-hold); font-size: 12px; font-weight: 550; padding: 3px 7px; border-radius: 7px; overflow-wrap: anywhere; line-height: 1.25; }
-.cal-clash { color: var(--hi); font-size: 12px; font-weight: 650; padding: 0 2px; }
 .cal-task { display: block; width: 100%; text-align: left; background: var(--surface2); border: 0; border-left: 3px solid var(--c-todo); border-radius: 7px; padding: 4px 7px; font-size: 12.5px; font-weight: 500; line-height: 1.25; color: var(--ink); cursor: pointer; min-height: 0; }
 .cal-task:hover { background: var(--line); border-left-color: var(--c-todo); }
 .cal-task-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -418,7 +406,6 @@ input[type=file]::file-selector-button { background: var(--surface2); color: var
 :root[data-theme="light"] .primary:hover,
 :root[data-theme="light"] .btn.primary:hover { background: #F5BC00 !important; border-color: #F5BC00 !important; }
 :root[data-theme="light"] .pill.client,
-:root[data-theme="light"] .pill.hol-gujarat,
 :root[data-theme="light"] .person-head .role.admin { border-color: #D9B23A !important; }
 :root[data-theme="light"] .notif-panel,
 :root[data-theme="light"] .tab-more-list { box-shadow: 0 14px 34px rgba(11, 18, 32, .14); }

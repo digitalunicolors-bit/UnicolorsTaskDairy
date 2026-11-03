@@ -1,9 +1,0 @@
-<fieldset class="full leave-length">
-  <legend>How long?</legend>
-  <div class="leave-length-opts">
-    {% for r in f.length %}<label class="leave-length-opt">{{ r.tag }}<span>{{ r.choice_label }}</span></label>{% endfor %}
-  </div>
-</fieldset>
-<label data-leave-start><span data-leave-start-label>From</span>{{ f.start_date }}{% for e in f.start_date.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
-<label data-leave-end>To{{ f.end_date }}{% for e in f.end_date.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
-<label data-leave-half hidden>Which half?{{ f.half }}</label>

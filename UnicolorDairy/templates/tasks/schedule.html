@@ -27,10 +27,7 @@
   </label>
   <noscript><button class="sm">Apply</button></noscript>
   <div class="cal-legend muted small">
-    <span><i class="cal-key holiday"></i>Office holiday</span>
-    <span><i class="cal-key leave"></i>On leave</span>
     <span><i class="cal-key late"></i>Overdue</span>
-    {% if user.is_lead %}<span><i class="cal-key clash"></i>Deadline during leave</span>{% endif %}
   </div>
 </form>
 
@@ -39,16 +36,12 @@
   {% for week in weeks %}
     <div class="cal-week" role="row">
       {% for d in week %}
-        <div role="cell" class="cal-day {% if not d.in_month %}out{% endif %} {% if d.closed %}closed{% endif %} {% if d.is_today %}today{% endif %} {% if d.holiday %}is-holiday{% endif %} {% if d.clashes %}has-clash{% endif %} {% if not d.busy %}quiet{% endif %}">
+        <div role="cell" class="cal-day {% if not d.in_month %}out{% endif %} {% if d.closed %}closed{% endif %} {% if d.is_today %}today{% endif %} {% if not d.busy %}quiet{% endif %}">
           <div class="cal-date">
             <span class="cal-num">{{ d.date.day }}</span>
             <span class="cal-weekday">{{ d.date|date:"D, j M" }}</span>
             {% if d.can_assign %}<a class="cal-add" href="{% url 'dashboard' %}?due={{ d.date|date:'Y-m-d' }}#assignPanel" aria-label="Assign a task due {{ d.date|date:'j F' }}" title="Assign a task due this day">+</a>{% endif %}
           </div>
-          {% if d.holiday %}<div class="cal-holiday">{{ d.holiday }}</div>{% endif %}
-          {% if d.clashes %}<div class="cal-clash">{{ d.clashes }} due during leave</div>{% endif %}
-          {% for p in d.away %}<div class="cal-leave">{{ p.first_name|default:p.display_name }} on leave</div>{% endfor %}
-          {% for p in d.half_away %}<div class="cal-leave">{{ p.first_name|default:p.display_name }} half day</div>{% endfor %}
           {% for t in d.tasks %}{% include "tasks/_cal_task.html" %}{% endfor %}
           {% if d.more_tasks %}
             <details class="cal-more">
@@ -61,7 +54,7 @@
     </div>
   {% endfor %}
 </div>
-<p class="muted small cal-note">{% if user.is_admin %}Showing the whole team.{% elif user.is_lead %}Showing your team and your own work.{% else %}Showing your own tasks, your leave and office holidays.{% endif %}</p>
+<p class="muted small cal-note">{% if user.is_admin %}Showing the whole team.{% elif user.is_lead %}Showing your team and your own work.{% else %}Showing your own tasks.{% endif %}</p>
 
 {% include "tasks/_task_modal.html" %}
 {% endblock %}

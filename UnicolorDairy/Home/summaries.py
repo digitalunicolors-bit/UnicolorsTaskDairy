@@ -1,7 +1,7 @@
 """The morning summary email: what each person has due and overdue, and what's waiting on admins and team leads.
 
 Each person gets at most one a day, recorded before sending, so a restart can't send it twice.
-Nothing is sent on days the office is closed, to people on leave, or to anyone with nothing to report.
+Nothing is sent on days the office is closed, or to anyone with nothing to report.
 """
 import logging
 
@@ -10,9 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from . import notifications
-from .models import (
-    DailySummary, ExtensionRequest, Leave, Task, User, is_office_closed, leaves_managed_by, on_leave_ids,
-)
+from .models import DailySummary, ExtensionRequest, Task, User, is_office_closed
 
 log = logging.getLogger(__name__)
 
@@ -25,14 +23,12 @@ def build_summary(user, today):
         "overdue": list(mine.filter(due_date__lt=today)),
         "today": list(mine.filter(due_date=today)),
         "approvals": [],
-        "leave_requests": 0,
         "more_time": 0,
     }
     if user.is_lead:
         managed = Task.objects.all() if user.is_admin else Task.objects.filter(assignee__manager=user)
         waiting = managed.filter(status=Task.Status.REVIEW).exclude(assignee=user).exclude(collaborators=user)
         summary["approvals"] = list(waiting.select_related("assignee", "client").order_by("submitted_at", "due_date"))
-        summary["leave_requests"] = leaves_managed_by(user).filter(status=Leave.Status.PENDING).count()
         summary["more_time"] = ExtensionRequest.objects.filter(
             status=ExtensionRequest.Status.PENDING, task__in=managed.exclude(assignee=user),
         ).count()
@@ -40,7 +36,7 @@ def build_summary(user, today):
 
 
 def has_news(summary):
-    return any(summary[k] for k in ("overdue", "today", "approvals", "leave_requests", "more_time"))
+    return any(summary[k] for k in ("overdue", "today", "approvals", "more_time"))
 
 
 def send_morning_summaries(today=None):
@@ -48,11 +44,8 @@ def send_morning_summaries(today=None):
     today = today or timezone.localdate()
     if is_office_closed(today):
         return 0
-    away = on_leave_ids(today)
     sent = 0
     for user in User.objects.filter(is_active=True).exclude(email=""):
-        if user.pk in away:
-            continue
         summary = build_summary(user, today)
         if not has_news(summary):
             continue

@@ -10,7 +10,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from . import notifications
-from .models import Notification, Task, TaskReminder, on_leave_ids
+from .models import Notification, Task, TaskReminder
 
 log = logging.getLogger(__name__)
 
@@ -39,10 +39,7 @@ def send_due_reminders(today=None):
     """Send every reminder that is due today. Returns how many were sent."""
     today = today or timezone.localdate()
     sent = 0
-    away = on_leave_ids(today)
     for task, kind, when in _reminders_due(today):
-        if task.assignee_id in away:
-            continue
         try:
             with transaction.atomic():
                 TaskReminder.objects.create(task=task, kind=kind, due_date=task.due_date)

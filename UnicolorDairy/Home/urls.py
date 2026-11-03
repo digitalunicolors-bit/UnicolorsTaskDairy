@@ -42,18 +42,8 @@ urlpatterns = [
     path("archive/<int:pk>/restore/", views_more.archive_restore, name="archive_restore"),
     path("clients/", views_more.clients, name="clients"),
     path("clients/<int:pk>/", views_more.client_update, name="client_update"),
-    path("calendar/", views_more.calendar_page, name="calendar"),
-    path("calendar/holidays/save/", views_more.holiday_catalog_save, name="holiday_catalog_save"),
-    path("calendar/holiday/<int:pk>/delete/", views_more.holiday_delete, name="holiday_delete"),
-    path("calendar/leave/<int:pk>/delete/", views_more.leave_delete, name="leave_delete"),
     path("schedule/", views_more.schedule, name="schedule"),
     path("my-tasks/add/", views_more.own_task_add, name="own_task_add"),
-    path("leave/", views_more.my_leave, name="my_leave"),
-    path("leave/check/", views_more.leave_check, name="leave_check"),
-    path("leave/approvals/", views_more.leave_approvals, name="leave_approvals"),
-    path("leave/<int:pk>/cancel/", views_more.leave_cancel, name="leave_cancel"),
-    path("leave/<int:pk>/reassign/", views_more.leave_reassign, name="leave_reassign"),
-    path("leave/<int:pk>/<str:decision>/", views_more.leave_decide, name="leave_decide"),
     path("requests/<int:pk>/<str:decision>/", views_more.request_decide, name="request_decide"),
 
     # search & recurring tasks
