@@ -342,18 +342,24 @@ def morning_summary(user, summary, today):
 
 
 def _leave_rows(leave):
-    return [
+    rows = [
         {"label": "Person", "value": leave.user.display_name, "bold": True},
         {"label": "Type", "value": leave.get_kind_display()},
-        {"label": "From", "value": f"{leave.start_date:%a, %d %b %Y}"},
-        {"label": "To", "value": f"{leave.end_date:%a, %d %b %Y}"},
+        {"label": "Length", "value": leave.length_label},
     ]
+    if leave.start_date == leave.end_date:
+        day = f"{leave.start_date:%a, %d %b %Y}"
+        rows.append({"label": "Date", "value": f"{day}, {leave.get_day_part_display().lower()}" if leave.is_half_day else day})
+    else:
+        rows.append({"label": "From", "value": f"{leave.start_date:%a, %d %b %Y}"})
+        rows.append({"label": "To", "value": f"{leave.end_date:%a, %d %b %Y}"})
+    return rows
 
 
 def leave_requested(leave, people):
     ctx = _context(
         "leave",
-        subject=f"Leave request: {leave.user.display_name}, {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+        subject=f"Leave request: {leave.user.display_name}, {leave.dates_label}",
         heading="New leave request",
         greeting_name="team",
         intro=f"{leave.user.display_name} applied for leave and needs a decision.",
@@ -370,7 +376,7 @@ def leave_decided(leave):
     approved = leave.status == leave.Status.APPROVED
     ctx = _context(
         "leave",
-        subject=f"Your leave was {'approved' if approved else 'declined'}: {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+        subject=f"Your leave was {'approved' if approved else 'declined'}: {leave.dates_label}",
         heading=f"Leave {'approved' if approved else 'declined'}",
         greeting_name=leave.user.first_name or leave.user.display_name,
         intro=f"{leave.decided_by.display_name if leave.decided_by else 'Your manager'} {'approved' if approved else 'declined'} your leave request.",
@@ -384,7 +390,7 @@ def leave_decided(leave):
 def leave_cancelled(leave, people):
     ctx = _context(
         "leave",
-        subject=f"Leave cancelled: {leave.user.display_name}, {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+        subject=f"Leave cancelled: {leave.user.display_name}, {leave.dates_label}",
         heading="Leave cancelled",
         greeting_name="team",
         intro=f"{leave.user.display_name} cancelled this leave, so they're working on these dates after all.",

@@ -3204,6 +3204,15 @@ button[hidden] { display: none; }
 .leave-status.declined { color: var(--hi); background: color-mix(in srgb, var(--hi) 12%, transparent); }
 .leave-status.cancelled { color: var(--muted); background: var(--surface2); }
 .leave-check { margin-top: 2px; }
+.form-grid label[hidden] { display: none; }
+.leave-length { border: 0; margin: 0; padding: 0; min-width: 0; }
+.leave-length legend { padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.leave-length-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.form-grid label.leave-length-opt { position: relative; display: inline-flex; margin: 0; cursor: pointer; }
+.leave-length-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.leave-length-opt span { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink); font-size: 14px; font-weight: 600; }
+.leave-length-opt input:checked + span { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.leave-length-opt input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 .leave-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
 .leave-row .grow { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
 .leave-row form { margin: 0; }

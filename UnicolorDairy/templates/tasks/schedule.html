@@ -48,6 +48,7 @@
           {% if d.holiday %}<div class="cal-holiday">{{ d.holiday }}</div>{% endif %}
           {% if d.clashes %}<div class="cal-clash">{{ d.clashes }} due during leave</div>{% endif %}
           {% for p in d.away %}<div class="cal-leave">{{ p.first_name|default:p.display_name }} on leave</div>{% endfor %}
+          {% for p in d.half_away %}<div class="cal-leave">{{ p.first_name|default:p.display_name }} half day</div>{% endfor %}
           {% for t in d.tasks %}{% include "tasks/_cal_task.html" %}{% endfor %}
           {% if d.more_tasks %}
             <details class="cal-more">

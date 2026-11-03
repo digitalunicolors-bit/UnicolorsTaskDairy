@@ -589,9 +589,9 @@ class CorporateTests(TestCase):
         self.assertContains(resp, "Apply for leave")
         self.assertContains(resp, "Bhai Dooj")
         self.assertContains(self.client.get(reverse("my_tasks")), reverse("my_leave"))
-        self.apply(self.yashi, cover=self.niyati.pk)
+        self.apply(self.yashi)
         leave = Leave.objects.get()
-        self.assertEqual((leave.user, leave.status, leave.cover), (self.yashi, "pending", self.niyati))
+        self.assertEqual((leave.user, leave.status), (self.yashi, "pending"))
         self.assertEqual(leave.approver, self.admin)
         self.assertTrue(Notification.objects.filter(recipient=self.lead, verb="leave").exists())
         self.assertTrue(Notification.objects.filter(recipient=self.admin, verb="leave").exists())
@@ -660,6 +660,64 @@ class CorporateTests(TestCase):
         Notification.objects.all().delete()
         self.post(self.yashi, "leave_cancel", leave.pk)
         self.assertTrue(Notification.objects.filter(recipient=self.lead, message__contains="cancelled").exists())
+
+    def test_one_day_needs_only_one_date(self):
+        day = (self.today + timedelta(days=4)).isoformat()
+        self.post(self.yashi, "my_leave", data={"length": "one", "kind": "casual", "start_date": day, "end_date": "", "note": "x", "approver": self.admin.pk})
+        leave = Leave.objects.get()
+        self.assertEqual((leave.end_date, leave.day_part, leave.days), (leave.start_date, "full", 1))
+        self.assertEqual(leave.length_label, "1 day")
+
+    def test_a_date_left_in_the_hidden_to_box_is_ignored(self):
+        day = self.today + timedelta(days=4)
+        self.post(self.yashi, "my_leave", data={"length": "one", "kind": "casual", "start_date": day.isoformat(), "end_date": (day + timedelta(days=9)).isoformat(), "note": "x", "approver": self.admin.pk})
+        self.assertEqual(Leave.objects.get().end_date, day)
+
+    def test_more_than_one_day_needs_a_last_day(self):
+        day = (self.today + timedelta(days=4)).isoformat()
+        self.post(self.yashi, "my_leave", data={"length": "many", "kind": "casual", "start_date": day, "end_date": "", "note": "x", "approver": self.admin.pk})
+        self.assertFalse(Leave.objects.exists())
+
+    def half_day(self, user, day, half):
+        return self.post(user, "my_leave", data={"length": "half", "half": half, "kind": "casual", "start_date": day.isoformat(), "note": "x", "approver": self.admin.pk})
+
+    def test_half_day_leave(self):
+        day = self.today + timedelta(days=4)
+        self.half_day(self.yashi, day, "second_half")
+        leave = Leave.objects.get()
+        self.assertEqual((leave.end_date, leave.day_part, leave.days, leave.length_label), (day, "second_half", 0.5, "Half day"))
+        self.assertIn("second half", leave.dates_label)
+        self.assertTrue(any("second half" in m.subject for m in mail.outbox))
+        self.client.force_login(self.yashi)
+        self.assertContains(self.client.get(reverse("my_leave")), "second half")
+        self.post(self.admin, "leave_decide", leave.pk, "approve")
+        # They still work part of the day, so they stay in reminders and recurring tasks.
+        self.assertNotIn(self.yashi.pk, on_leave_ids(day))
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("schedule"), {"month": f"{day:%Y-%m}"}), "half day")
+
+    def test_half_days_only_clash_with_the_same_half_or_a_full_day(self):
+        day = self.today + timedelta(days=4)
+        self.half_day(self.yashi, day, "first_half")
+        self.half_day(self.yashi, day, "first_half")
+        self.assertEqual(Leave.objects.count(), 1)
+        self.half_day(self.yashi, day, "second_half")
+        self.assertEqual(Leave.objects.count(), 2)
+        self.post(self.yashi, "my_leave", data={"length": "one", "kind": "casual", "start_date": day.isoformat(), "note": "x", "approver": self.admin.pk})
+        self.assertEqual(Leave.objects.count(), 2)
+        other = self.today + timedelta(days=6)
+        self.post(self.niyati, "my_leave", data={"length": "one", "kind": "casual", "start_date": other.isoformat(), "note": "x", "approver": self.admin.pk})
+        self.half_day(self.niyati, other, "first_half")
+        self.assertEqual(Leave.objects.filter(user=self.niyati).count(), 1)
+
+    def test_who_can_cover_is_gone(self):
+        self.client.force_login(self.yashi)
+        self.assertNotContains(self.client.get(reverse("my_leave")), "Who can cover")
+
+    def test_admin_can_add_half_day_for_someone(self):
+        day = self.today + timedelta(days=4)
+        self.post(self.admin, "calendar", data={"kind": "leave", "user": self.yashi.pk, "length": "half", "half": "first_half", "start_date": day.isoformat(), "note": ""})
+        self.assertEqual(Leave.objects.get().day_part, "first_half")
 
     def test_overlap_and_bad_dates_are_refused(self):
         self.apply(self.yashi, days=(1, 3))
@@ -948,6 +1006,8 @@ class CorporateTests(TestCase):
 
     def test_theme_switch_is_on_login_and_app_pages(self):
         self.assertContains(self.client.get(reverse("login")), "data-theme-toggle")
+        self.assertContains(self.client.get(reverse("login")), '<html lang="en" data-theme="light">')
+        self.assertNotContains(self.client.get(reverse("login")), "prefers-color-scheme")
         self.client.force_login(self.yashi)
         self.assertContains(self.client.get(reverse("my_tasks")), "data-theme-toggle")
 

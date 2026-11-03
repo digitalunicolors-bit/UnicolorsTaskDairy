@@ -100,15 +100,16 @@ def next_working_day(day):
 
 
 def on_leave_ids(day):
-    """People on approved leave that day. A request has no effect until it's approved."""
+    """People away for the whole of that day. A request has no effect until it's approved,
+    and someone on half-day leave still works part of the day, so they aren't counted."""
     return set(
-        Leave.objects.filter(status=Leave.Status.APPROVED, start_date__lte=day, end_date__gte=day)
+        Leave.objects.filter(status=Leave.Status.APPROVED, day_part=Leave.DayPart.FULL, start_date__lte=day, end_date__gte=day)
         .values_list("user_id", flat=True)
     )
 
 
 def is_on_leave(user, day):
-    return Leave.objects.filter(status=Leave.Status.APPROVED, user=user, start_date__lte=day, end_date__gte=day).exists()
+    return Leave.objects.filter(status=Leave.Status.APPROVED, day_part=Leave.DayPart.FULL, user=user, start_date__lte=day, end_date__gte=day).exists()
 
 
 def leaves_managed_by(user):
@@ -159,13 +160,18 @@ class Leave(models.Model):
         SICK = "sick", "Sick leave"
         OTHER = "other", "Other"
 
+    class DayPart(models.TextChoices):
+        FULL = "full", "Full day"
+        FIRST_HALF = "first_half", "First half"
+        SECOND_HALF = "second_half", "Second half"
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="leaves")
     start_date = models.DateField()
     end_date = models.DateField()
+    day_part = models.CharField(max_length=12, choices=DayPart.choices, default=DayPart.FULL)
     note = models.CharField(max_length=200, blank=True)
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OTHER)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPROVED, db_index=True)
-    cover = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     approver = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="leaves_to_approve",
         help_text="The person this request was sent to",
@@ -183,8 +189,29 @@ class Leave(models.Model):
         return f"{self.user} {self.start_date}–{self.end_date}"
 
     @property
+    def is_half_day(self):
+        return self.day_part != self.DayPart.FULL
+
+    @property
     def days(self):
-        return (self.end_date - self.start_date).days + 1
+        return 0.5 if self.is_half_day else (self.end_date - self.start_date).days + 1
+
+    @property
+    def length_label(self):
+        """How long the leave is, in words: "Half day", "1 day", "3 days"."""
+        if self.is_half_day:
+            return "Half day"
+        return "1 day" if self.days == 1 else f"{self.days} days"
+
+    @property
+    def dates_label(self):
+        """When the leave is, in words: "5 Nov 2026", "5 Nov 2026, first half", "5 Nov – 7 Nov 2026"."""
+        start, end = self.start_date, self.end_date
+        last = f"{end.day} {end:%b %Y}"
+        if start == end:
+            return f"{last}, {self.get_day_part_display().lower()}" if self.is_half_day else last
+        first = f"{start.day} {start:%b}" if start.year == end.year else f"{start.day} {start:%b %Y}"
+        return f"{first} – {last}"
 
     @property
     def can_cancel(self):

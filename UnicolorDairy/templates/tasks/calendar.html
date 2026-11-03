@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block content %}
 {% include "tasks/_leave_tabs.html" with active="calendar" %}
 <div class="rep-charts">
@@ -23,24 +24,23 @@
   </div>
   <div class="panel">
     <h2>Add leave for someone <small>approved straight away</small></h2>
-    <form method="post" class="form-grid two-col">
+    <form method="post" class="form-grid two-col" data-leave-length>
       {% csrf_token %}
       <input type="hidden" name="kind" value="leave">
       <label class="full">Person{{ leave_form.user }}</label>
-      <label>From{{ leave_form.start_date }}</label>
-      <label>To{{ leave_form.end_date }}</label>
+      {% include "tasks/_leave_length.html" with f=leave_form %}
       <label class="full">Note{{ leave_form.note }}</label>
-      {% for f in leave_form %}{% for e in f.errors %}<div class="err full">{{ e }}</div>{% endfor %}{% endfor %}
+      {% for e in leave_form.user.errors %}<div class="err full">{{ e }}</div>{% endfor %}
       {% for e in leave_form.non_field_errors %}<div class="err full">{{ e }}</div>{% endfor %}
       <div class="full"><button class="primary">Add leave</button></div>
     </form>
     {% for l in leaves %}
       <div class="rec-row">
-        <div class="grow"><b>{{ l.user.display_name }}</b> <span class="muted small">{{ l.start_date|date:"j M" }} – {{ l.end_date|date:"j M Y" }}{% if l.note %} · {{ l.note }}{% endif %}</span></div>
+        <div class="grow"><b>{{ l.user.display_name }}</b> <span class="muted small">{{ l.dates_label }}{% if l.note %} · {{ l.note }}{% endif %}</span></div>
         <form method="post" action="{% url 'leave_delete' l.pk %}">{% csrf_token %}<button class="sm">Remove</button></form>
       </div>
     {% empty %}<p class="muted small">No leave added.</p>{% endfor %}
-    <p class="muted small">While someone is on approved leave, they get no reminders, recurring tasks skip them and admins are told, and they're marked on the dashboard.</p>
+    <p class="muted small">While someone is on approved leave, they get no reminders, recurring tasks skip them and admins are told, and they're marked on the dashboard. Half-day leave shows on the calendar, but the person still counts as working that day.</p>
   </div>
 </div>
 
@@ -76,6 +76,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{% static 'js/leave_length.js' %}"></script>
 <script>
 (function () {
   const root = document.getElementById("indianCalendar");

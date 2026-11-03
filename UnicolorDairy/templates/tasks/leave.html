@@ -1,16 +1,15 @@
 {% extends "base.html" %}
+{% load static %}
 {% block content %}
 {% include "tasks/_leave_tabs.html" with active="mine" %}
 <div class="rep-charts">
   <div class="panel">
     <h2>Apply for leave</h2>
     {% for e in form.non_field_errors %}<div class="err">{{ e }}</div>{% endfor %}
-    <form method="post" class="form-grid two-col" id="leaveForm" data-check-url="{% url 'leave_check' %}">
+    <form method="post" class="form-grid two-col" id="leaveForm" data-leave-length data-check-url="{% url 'leave_check' %}">
       {% csrf_token %}
-      <label>From{{ form.start_date }}{% for e in form.start_date.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
-      <label>To{{ form.end_date }}{% for e in form.end_date.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
-      <label>Type of leave{{ form.kind }}</label>
-      <label>Who can cover? (optional){{ form.cover }}</label>
+      {% include "tasks/_leave_length.html" with f=form %}
+      <label class="full">Type of leave{{ form.kind }}</label>
       <label class="full">Send for approval to{{ form.approver }}{% for e in form.approver.errors %}<span class="err">{{ e }}</span>{% endfor %}{% if user.manager %}<span class="muted small">{{ user.manager.display_name }}, your reporting manager, is emailed as well.</span>{% endif %}</label>
       <label class="full">Reason{{ form.note }}{% for e in form.note.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>
       <div class="full leave-check" id="leaveCheck" aria-live="polite" hidden></div>
@@ -30,8 +29,8 @@
   {% for l in my_requests %}
     <div class="leave-row">
       <div class="grow">
-        <b>{{ l.start_date|date:"j M" }}{% if l.days > 1 %} – {{ l.end_date|date:"j M Y" }}{% else %} {{ l.start_date|date:"Y" }}{% endif %}</b>
-        <span class="muted small">{{ l.days }} day{{ l.days|pluralize }} · {{ l.get_kind_display }}{% if l.note %} · {{ l.note }}{% endif %}</span>
+        <b>{{ l.dates_label }}</b>
+        <span class="muted small">{{ l.length_label }} · {{ l.get_kind_display }}{% if l.note %} · {{ l.note }}{% endif %}</span>
         {% if l.status == "pending" and l.approver %}<div class="muted small">Sent to {{ l.approver.display_name }}</div>{% endif %}
         {% if l.decided_by and l.status != "pending" %}<div class="muted small">{{ l.get_status_display }} by {{ l.decided_by.display_name }}{% if l.decision_note %}: {{ l.decision_note }}{% endif %}</div>{% endif %}
       </div>
@@ -50,6 +49,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{% static 'js/leave_length.js' %}"></script>
 <script>
 (function () {
   // After dates are picked, show what falls during the leave.
@@ -57,13 +57,14 @@
   const box = document.getElementById("leaveCheck");
   if (!form || !box) return;
   const start = form.querySelector("[name=start_date]"), end = form.querySelector("[name=end_date]");
+  const lastDay = () => (form.querySelector("[name=length]:checked") || {}).value === "many" ? end.value : start.value;
   function line(text) { const d = document.createElement("div"); d.textContent = text; return d; }
   async function check() {
     if (end.value && start.value) end.min = start.value;
     box.hidden = true;
-    if (!start.value || !end.value) return;
+    if (!start.value || !lastDay()) return;
     try {
-      const r = await fetch(form.dataset.checkUrl + "?start=" + start.value + "&end=" + end.value, { headers: { "X-Requested-With": "fetch" } });
+      const r = await fetch(form.dataset.checkUrl + "?start=" + start.value + "&end=" + lastDay(), { headers: { "X-Requested-With": "fetch" } });
       if (!r.ok) return;
       const data = await r.json();
       box.innerHTML = "";
@@ -80,6 +81,7 @@
   }
   start.addEventListener("change", check);
   end.addEventListener("change", check);
+  form.querySelectorAll("[name=length]").forEach(r => r.addEventListener("change", check));
   check();
 })();
 </script>

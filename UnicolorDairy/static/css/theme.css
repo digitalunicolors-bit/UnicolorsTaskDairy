@@ -446,4 +446,4 @@ input[type=file]::file-selector-button { background: var(--surface2); color: var
 ::view-transition-new(root) { z-index: 2; }
 ::view-transition-old(root) { z-index: 1; }
 @media (prefers-reduced-motion: reduce) { .theme-switch, .theme-thumb, .theme-stars { transition: none; } }
-:root[data-theme="light"] .top h1 span:first-child { background: var(--brand); color: var(--brand-ink); padding: 0 6px; border-radius: 6px; }
+:root[data-theme="light"] .top h1 span:first-child { color: var(--ink); }

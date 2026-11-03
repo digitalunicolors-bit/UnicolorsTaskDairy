@@ -343,14 +343,44 @@ class HolidayForm(forms.ModelForm):
         }
 
 
+def _length_field():
+    return forms.ChoiceField(
+        label="How long?", required=False, initial="one", widget=forms.RadioSelect,
+        choices=[("one", "One day"), ("half", "Half day"), ("many", "More than one day")],
+    )
+
+
+def _half_field():
+    return forms.ChoiceField(
+        label="Which half?", required=False, initial=Leave.DayPart.FIRST_HALF,
+        choices=[(Leave.DayPart.FIRST_HALF, "First half"), (Leave.DayPart.SECOND_HALF, "Second half")],
+    )
+
+
+def _apply_leave_length(form, cleaned):
+    """Turn the "how long" answer into dates. One day and half day need only one date."""
+    length = cleaned.get("length") or "many"
+    if length == "many":
+        form.instance.day_part = Leave.DayPart.FULL
+        if cleaned.get("start_date") and not cleaned.get("end_date") and "end_date" not in form.errors:
+            form.add_error("end_date", "Choose the last day of your leave.")
+        return
+    form.errors.pop("end_date", None)  # a date left in the hidden "To" box doesn't count
+    cleaned["end_date"] = cleaned.get("start_date")
+    form.instance.day_part = (cleaned.get("half") or Leave.DayPart.FIRST_HALF) if length == "half" else Leave.DayPart.FULL
+
+
 class LeaveRequestForm(forms.ModelForm):
     """A person applying for their own leave."""
 
+    length = _length_field()
+    half = _half_field()
+
     class Meta:
         model = Leave
-        fields = ["kind", "start_date", "end_date", "approver", "note", "cover"]
+        fields = ["kind", "start_date", "end_date", "approver", "note"]
         labels = {"kind": "Type of leave", "start_date": "From", "end_date": "To", "note": "Reason",
-                  "cover": "Who can cover? (optional)", "approver": "Send for approval to"}
+                  "approver": "Send for approval to"}
         widgets = {
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
@@ -372,13 +402,11 @@ class LeaveRequestForm(forms.ModelForm):
         self.fields["approver"].error_messages["required"] = "Choose who should approve this."
         if user.manager_id and people.filter(pk=user.manager_id).exists():
             self.fields["approver"].initial = user.manager_id
-        self.fields["cover"].required = False
-        self.fields["cover"].queryset = User.objects.filter(is_active=True).exclude(pk=user.pk)
-        self.fields["cover"].empty_label = "Not sure"
-        self.fields["cover"].label_from_instance = lambda u: u.display_name
+        self.fields["end_date"].required = False
 
     def clean(self):
         cleaned = super().clean()
+        _apply_leave_length(self, cleaned)
         start, end = cleaned.get("start_date"), cleaned.get("end_date")
         if not start or not end:
             return cleaned
@@ -392,13 +420,21 @@ class LeaveRequestForm(forms.ModelForm):
         clash = Leave.objects.filter(
             user=self.user, status__in=[Leave.Status.PENDING, Leave.Status.APPROVED],
             start_date__lte=end, end_date__gte=start,
-        ).exists()
-        if clash:
+        )
+        # The two halves of one day can be taken separately.
+        if self.instance.day_part == Leave.DayPart.FIRST_HALF:
+            clash = clash.exclude(day_part=Leave.DayPart.SECOND_HALF)
+        elif self.instance.day_part == Leave.DayPart.SECOND_HALF:
+            clash = clash.exclude(day_part=Leave.DayPart.FIRST_HALF)
+        if clash.exists():
             raise forms.ValidationError("You already have leave applied for on some of these dates.")
         return cleaned
 
 
 class LeaveForm(forms.ModelForm):
+    length = _length_field()
+    half = _half_field()
+
     class Meta:
         model = Leave
         fields = ["user", "start_date", "end_date", "note"]
@@ -413,9 +449,11 @@ class LeaveForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["user"].queryset = User.objects.filter(is_active=True)
         self.fields["user"].label_from_instance = lambda u: u.display_name
+        self.fields["end_date"].required = False
 
     def clean(self):
         cleaned = super().clean()
+        _apply_leave_length(self, cleaned)
         start, end = cleaned.get("start_date"), cleaned.get("end_date")
         if start and end and end < start:
             self.add_error("end_date", "The end date can't be before the start date.")

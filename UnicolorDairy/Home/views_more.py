@@ -404,7 +404,7 @@ def my_leave(request):
         if approvers:
             _tell_about_leave(
                 approvers, user,
-                f"{user.display_name} applied for leave, {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+                f"{user.display_name} applied for leave, {leave.dates_label}",
             )
             notifications.leave_requested(leave, approvers)
             messages.success(request, "Leave request sent. Nothing changes until it's approved.")
@@ -413,7 +413,7 @@ def my_leave(request):
         return redirect("my_leave")
     return render(request, "tasks/leave.html", {
         "form": form,
-        "my_requests": user.leaves.select_related("decided_by", "cover", "approver")[:30],
+        "my_requests": user.leaves.select_related("decided_by", "approver")[:30],
         "holidays": Holiday.objects.filter(date__gte=today)[:40],
         "today": today,
         "pending_leave_count": leaves_managed_by(user).filter(status=Leave.Status.PENDING).count() if user.is_lead else 0,
@@ -448,7 +448,7 @@ def leave_cancel(request, pk):
         people = leave.approvers()
         _tell_about_leave(
             people, request.user,
-            f"{request.user.display_name} cancelled their leave, {leave.start_date:%d %b} to {leave.end_date:%d %b}",
+            f"{request.user.display_name} cancelled their leave, {leave.dates_label}",
         )
         notifications.leave_cancelled(leave, people)
     messages.success(request, "Leave cancelled.")
@@ -459,7 +459,7 @@ def leave_cancel(request, pk):
 def leave_approvals(request):
     """Leave waiting for a decision, with what each person's absence would affect."""
     today = timezone.localdate()
-    scope = leaves_managed_by(request.user).select_related("user", "cover", "decided_by", "approver")
+    scope = leaves_managed_by(request.user).select_related("user", "decided_by", "approver")
     pending = []
     for leave in scope.filter(status=Leave.Status.PENDING).order_by("start_date"):
         others = scope.filter(
@@ -497,7 +497,7 @@ def leave_decide(request, pk, decision):
     leave.decision_note = request.POST.get("note", "").strip()[:500]
     leave.save()
     word = "approved" if approved else "declined"
-    text = f"Your leave, {leave.start_date:%d %b} to {leave.end_date:%d %b}, was {word}"
+    text = f"Your leave, {leave.dates_label}, was {word}"
     if leave.decision_note:
         text += f": {leave.decision_note}"
     _tell_about_leave([leave.user], request.user, text)
@@ -593,7 +593,9 @@ def schedule(request):
         days = []
         for day in week:
             items = by_day.get(day, [])
-            away = [leave.user for leave in leaves if leave.start_date <= day <= leave.end_date]
+            today_leaves = [leave for leave in leaves if leave.start_date <= day <= leave.end_date]
+            away = [leave.user for leave in today_leaves if not leave.is_half_day]
+            half_away = [leave.user for leave in today_leaves if leave.is_half_day]
             away_ids = {p.pk for p in away}
             days.append({
                 "date": day,
@@ -602,11 +604,12 @@ def schedule(request):
                 "closed": day.weekday() in off_days,
                 "holiday": holidays.get(day),
                 "away": away,
+                "half_away": half_away,
                 "tasks": items[:4],
                 "more_tasks": items[4:],
                 # A deadline for someone who's on leave that day, the kind of clash to catch early.
                 "clashes": sum(1 for t in items if t.assignee_id in away_ids and t.status in Task.NEEDS_WORK),
-                "busy": len(items) > 0 or bool(away) or day in holidays,
+                "busy": len(items) > 0 or bool(today_leaves) or day in holidays,
                 "can_assign": user.is_lead and day >= today,
             })
         calendar_weeks.append(days)
